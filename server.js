@@ -151,15 +151,62 @@ function buildFormPinPayload() {
   };
 }
 
-async function notifySlack(request) {
+function buildDoneSlackPayload(req) {
+  const link = req.completionLink || "";
+  const text =
+    `*Design task done* · \`${req.id}\`\n` +
+    `• *Title:* ${req.projectName}\n` +
+    `• *Who asked:* ${req.requesterName}\n` +
+    `• *Team:* ${req.team}\n` +
+    `• *Link:* ${link}`;
+
+  return {
+    text: `Done: ${req.projectName} (${req.id})`,
+    blocks: [
+      {
+        type: "header",
+        text: { type: "plain_text", text: "Design task done", emoji: true },
+      },
+      {
+        type: "section",
+        fields: [
+          { type: "mrkdwn", text: `*Title*\n${req.projectName}` },
+          { type: "mrkdwn", text: `*Who asked*\n${req.requesterName}` },
+          { type: "mrkdwn", text: `*Team*\n${req.team}` },
+          {
+            type: "mrkdwn",
+            text: `*Completed by*\n${req.completedBy || "designer"}`,
+          },
+        ],
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*Delivery link*\n${link ? `<${link}|${link}>` : "—"}`,
+        },
+      },
+      {
+        type: "context",
+        elements: [{ type: "mrkdwn", text: `\`${req.id}\`` }],
+      },
+    ],
+  };
+}
+
+function isValidDeliveryLink(url) {
+  const s = String(url || "").trim();
+  return /^https?:\/\/\S+/i.test(s);
+}
+
+async function notifySlackDone(request) {
   if (!SLACK_WEBHOOK_URL) {
     return { sent: false, reason: "SLACK_WEBHOOK_URL not set" };
   }
-  const payload = buildSlackPayload(request);
   const res = await fetch(SLACK_WEBHOOK_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(buildDoneSlackPayload(request)),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
@@ -238,7 +285,7 @@ app.get("/api/requests/:id", (req, res) => {
   res.json({ request: found });
 });
 
-app.patch("/api/requests/:id", (req, res) => {
+app.patch("/api/requests/:id", async (req, res) => {
   const list = readRequests();
   const idx = list.findIndex((r) => r.id === req.params.id);
   if (idx < 0) return res.status(404).json({ error: "Request not found" });
@@ -299,7 +346,40 @@ app.patch("/api/requests/:id", (req, res) => {
   }
 
   if (body.expectedDate !== undefined) row.expectedDate = body.expectedDate || "";
-  if (body.status) row.status = String(body.status);
+
+  const nextStatus = body.status ? String(body.status) : "";
+  const markingDone =
+    nextStatus === "complete" ||
+    nextStatus === "delivered" ||
+    nextStatus === "done";
+
+  if (markingDone) {
+    const link = String(body.completionLink || body.deliveryLink || "").trim();
+    if (!link || !isValidDeliveryLink(link)) {
+      return res.status(400).json({
+        error: "Attach a Drive or Figma link (https://…) to mark this done",
+      });
+    }
+    row.completionLink = link;
+    row.completedAt = now;
+    row.completedBy = String(body.updatedBy || body.completedBy || "").trim();
+    row.status = nextStatus === "delivered" ? "delivered" : "complete";
+
+    try {
+      const slack = await notifySlackDone(row);
+      if (slack.sent) row.completionSlackAt = now;
+      else row.completionSlackError = slack.reason;
+    } catch (err) {
+      row.completionSlackError = err.message || String(err);
+    }
+  } else if (body.status) {
+    row.status = String(body.status);
+  }
+
+  if (body.completionLink !== undefined && !markingDone) {
+    row.completionLink = String(body.completionLink || "").trim();
+  }
+
   row.updatedAt = now;
   row.updatedBy = body.updatedBy || "";
 
@@ -337,6 +417,10 @@ app.post("/api/requests", async (req, res) => {
     assigneeUsername: "",
     assignees: [],
     expectedDate: null,
+    completionLink: "",
+    completedAt: null,
+    completedBy: "",
+    completionSlackAt: null,
     slackNotifiedAt: null,
     slackError: null,
   };
