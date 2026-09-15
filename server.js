@@ -272,6 +272,8 @@ app.post("/api/requests", async (req, res) => {
     referenceLinks: String(body.referenceLinks || "").trim(),
     // Assignment fields (filled later by manager)
     assignee: null,
+    assigneeUsername: "",
+    assignees: [],
     expectedDate: null,
     slackNotifiedAt: null,
     slackError: null,
