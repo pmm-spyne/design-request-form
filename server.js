@@ -1,9 +1,10 @@
 /**
  * Spyne Design Desk — API
- * POST /api/requests  → save full payload + Slack (short summary)
- * GET  /api/requests  → manager dashboard data
- * GET  /api/requests/:id
- * GET  /api/health
+ * POST   /api/requests      → save full payload + Slack (short summary)
+ * GET    /api/requests      → list (Marketing Central Design board pulls this)
+ * GET    /api/requests/:id
+ * PATCH  /api/requests/:id  → assign / update status (called by Marketing Central)
+ * GET    /api/health
  */
 require("dotenv").config();
 const express = require("express");
@@ -173,6 +174,76 @@ app.get("/api/requests/:id", (req, res) => {
   const found = readRequests().find((r) => r.id === req.params.id);
   if (!found) return res.status(404).json({ error: "Request not found" });
   res.json({ request: found });
+});
+
+app.patch("/api/requests/:id", (req, res) => {
+  const list = readRequests();
+  const idx = list.findIndex((r) => r.id === req.params.id);
+  if (idx < 0) return res.status(404).json({ error: "Request not found" });
+
+  const body = req.body || {};
+  const row = { ...list[idx] };
+  const now = new Date().toISOString();
+
+  const ROSTER_NAMES = {
+    afnan: "Afnan Khan",
+    karan: "Karan Singh",
+    sourav: "Sourav Jagga",
+    dhruv: "Dhruv",
+    anuj: "Anuj Sanadhya",
+    farooq: "Farooq Saifi",
+    mrigendra: "Mrigendra",
+    mrigender: "Mrigendra",
+  };
+
+  function normUser(u) {
+    const v = String(u || "").trim().toLowerCase();
+    return v === "mrigender" ? "mrigendra" : v;
+  }
+
+  if (Array.isArray(body.assigneeUsernames)) {
+    const usernames = body.assigneeUsernames.map(normUser).filter(Boolean);
+    row.assignees = usernames.map((u) => ({
+      id: u,
+      username: u,
+      name: ROSTER_NAMES[u] || u,
+      part: "Contribution",
+      status: "assigned",
+    }));
+    row.assignee = usernames.length === 1 ? usernames[0] : null;
+    row.assigneeUsername = row.assignee;
+    row.status = usernames.length ? "assigned" : "unassigned";
+  } else if (body.assigneeUsername !== undefined) {
+    const u = normUser(body.assigneeUsername);
+    if (!u) {
+      row.assignees = [];
+      row.assignee = null;
+      row.assigneeUsername = "";
+      row.status = "unassigned";
+    } else {
+      row.assignees = [
+        {
+          id: u,
+          username: u,
+          name: ROSTER_NAMES[u] || u,
+          part: "Full task",
+          status: "assigned",
+        },
+      ];
+      row.assignee = u;
+      row.assigneeUsername = u;
+      row.status = "assigned";
+    }
+  }
+
+  if (body.expectedDate !== undefined) row.expectedDate = body.expectedDate || "";
+  if (body.status) row.status = String(body.status);
+  row.updatedAt = now;
+  row.updatedBy = body.updatedBy || "";
+
+  list[idx] = row;
+  writeRequests(list);
+  res.json({ ok: true, request: row });
 });
 
 app.post("/api/requests", async (req, res) => {
