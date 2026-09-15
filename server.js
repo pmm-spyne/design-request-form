@@ -66,20 +66,15 @@ function fmtDate(iso) {
   return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
-/** Short Slack message — only the 5 key fields */
+/** Short Slack message — key fields only */
 function buildSlackPayload(req) {
-  const dashboardLink = APP_URL
-    ? `\n<${APP_URL}/?view=manager&id=${encodeURIComponent(req.id)}|Open in Manager dashboard>`
-    : "";
-
   const text =
     `*New design request* · \`${req.id}\`\n` +
-    `• *Name:* ${req.requesterName}\n` +
+    `• *Who:* ${req.requesterName}\n` +
     `• *Team:* ${req.team}\n` +
     `• *Project:* ${req.projectName}\n` +
-    `• *Needed by:* ${fmtDate(req.neededBy)}${req.priority && req.priority !== "p2" ? ` (${priorityLabel(req.priority)})` : ""}\n` +
-    `• *Where it will be used:* ${req.whereUsed || "—"}` +
-    dashboardLink;
+    `• *Needed by:* ${fmtDate(req.neededBy)}\n` +
+    `• *Where used:* ${req.whereUsed || "—"}`;
 
   return {
     text: `New design request: ${req.projectName} (${req.id})`,
@@ -91,7 +86,7 @@ function buildSlackPayload(req) {
       {
         type: "section",
         fields: [
-          { type: "mrkdwn", text: `*Name*\n${req.requesterName}` },
+          { type: "mrkdwn", text: `*Who is asking*\n${req.requesterName}` },
           { type: "mrkdwn", text: `*Team*\n${req.team}` },
           { type: "mrkdwn", text: `*Project*\n${req.projectName}` },
           { type: "mrkdwn", text: `*Needed by*\n${fmtDate(req.neededBy)}` },
@@ -106,12 +101,7 @@ function buildSlackPayload(req) {
       },
       {
         type: "context",
-        elements: [
-          {
-            type: "mrkdwn",
-            text: `\`${req.id}\`${req.priority && req.priority !== "p2" ? ` · ${priorityLabel(req.priority)}` : ""}${APP_URL ? ` · <${APP_URL}/?view=manager&id=${encodeURIComponent(req.id)}|Open dashboard>` : ""}`,
-          },
-        ],
+        elements: [{ type: "mrkdwn", text: `\`${req.id}\`` }],
       },
     ],
   };
@@ -137,20 +127,16 @@ async function notifySlack(request) {
 function validateBody(body) {
   const errors = [];
   const required = [
-    ["requesterName", "Your name"],
-    ["requesterEmail", "Work email"],
+    ["requesterName", "Who is asking"],
     ["team", "Team"],
-    ["projectName", "Project name"],
+    ["projectName", "Project"],
+    ["workType", "Work type"],
     ["brief", "Brief / requirements"],
     ["neededBy", "Needed by"],
     ["whereUsed", "Where it will be used"],
   ];
   for (const [key, label] of required) {
     if (!body[key] || !String(body[key]).trim()) errors.push(`${label} is required`);
-  }
-  const email = String(body.requesterEmail || "").trim();
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    errors.push("Work email looks invalid");
   }
   return errors;
 }
@@ -258,18 +244,18 @@ app.post("/api/requests", async (req, res) => {
     status: "new",
     createdAt: now,
     updatedAt: now,
-    // Full form — everything Agrim sees on the dashboard
     requesterName: String(body.requesterName).trim(),
-    requesterEmail: String(body.requesterEmail).trim(),
     team: String(body.team).trim(),
     projectName: String(body.projectName).trim(),
     workType: String(body.workType || "other").trim(),
     brief: String(body.brief).trim(),
-    priority: ["p0", "p1", "p2"].includes(body.priority) ? body.priority : "p2",
     neededBy: String(body.neededBy).trim(),
     whereUsed: String(body.whereUsed).trim(),
-    formatSpecs: String(body.formatSpecs || "").trim(),
     referenceLinks: String(body.referenceLinks || "").trim(),
+    // Kept empty for older dashboard fields
+    requesterEmail: "",
+    priority: "p2",
+    formatSpecs: "",
     // Assignment fields (filled later by manager)
     assignee: null,
     assigneeUsername: "",

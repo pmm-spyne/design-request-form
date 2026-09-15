@@ -73,44 +73,36 @@
       "<p>Share enough context so the team can start without chasing you for details.</p></div>";
     html += '<div class="panel-bd">';
 
-    html += '<fieldset><legend>About you</legend><div class="row">';
     html +=
-      '<label class="f">Your name <span class="req">*</span><input name="requesterName" autocomplete="name" required placeholder="e.g. Nidhi Singh"></label>';
+      '<label class="f">Who is asking <span class="req">*</span>' +
+      '<input name="requesterName" autocomplete="name" required placeholder="e.g. Nidhi Singh"></label>';
+
     html +=
-      '<label class="f">Work email <span class="req">*</span><input name="requesterEmail" type="email" autocomplete="email" required placeholder="you@spyne.ai"></label>';
-    html += "</div>";
-    html += '<label class="f">Your team <span class="req">*</span><select name="team" required><option value="">Select…</option>';
+      '<label class="f">Team <span class="req">*</span><select name="team" required><option value="">Select…</option>';
     TEAMS.forEach(function (t) {
       html += "<option>" + esc(t) + "</option>";
     });
-    html += "</select></label></fieldset>";
+    html += "</select></label>";
 
-    html += '<fieldset><legend>The request</legend>';
     html +=
-      '<label class="f">Project name <span class="req">*</span>' +
+      '<label class="f">Project <span class="req">*</span>' +
       '<input name="projectName" required placeholder="e.g. LinkedIn carousel — Studio AI launch"></label>';
+
     html +=
-      '<label class="f">Type of work <span class="req">*</span><select name="workType" required><option value="">Select…</option>';
+      '<label class="f">Work type <span class="req">*</span><select name="workType" required><option value="">Select…</option>';
     WORK_TYPES.forEach(function (w) {
       html += '<option value="' + w.id + '">' + esc(w.label) + "</option>";
     });
     html += "</select></label>";
+
     html +=
       '<label class="f">Brief / requirements <span class="req">*</span>' +
-      '<textarea name="brief" required placeholder="Audience, message, must-include elements, references, success criteria…"></textarea></label>';
-    html += "</fieldset>";
+      '<textarea name="brief" required placeholder="Audience, message, must-include elements, success criteria…"></textarea></label>';
 
-    html += '<fieldset><legend>Timing &amp; placement</legend><div class="row">';
     html +=
-      '<label class="f">Needed by <span class="req">*</span><input type="date" name="neededBy" required></label>';
-    html += '<label class="f">How urgent is it?<div class="seg" role="radiogroup">';
-    html +=
-      '<input type="radio" name="priority" id="pr2" value="p2" checked><label for="pr2">Normal</label>';
-    html +=
-      '<input type="radio" name="priority" id="pr1" value="p1"><label for="pr1">High</label>';
-    html +=
-      '<input type="radio" name="priority" id="pr0" value="p0"><label for="pr0">Critical</label>';
-    html += "</div></label></div>";
+      '<label class="f">Needed by <span class="req">*</span>' +
+      '<input type="date" name="neededBy" required></label>';
+
     html +=
       '<label class="f">Where it will be used <span class="req">*</span>' +
       '<select name="whereUsed" required><option value="">Select…</option>';
@@ -118,13 +110,10 @@
       html += "<option>" + esc(w) + "</option>";
     });
     html += "</select></label>";
-    html +=
-      '<label class="f">Format &amp; size <span class="hint">optional</span>' +
-      '<input name="formatSpecs" placeholder="e.g. 1080×1080, 5 slides, PDF"></label>';
+
     html +=
       '<label class="f">Reference links <span class="hint">optional — one per line</span>' +
       '<textarea name="referenceLinks" placeholder="https://…"></textarea></label>';
-    html += "</fieldset>";
 
     html +=
       '<div class="form-actions"><button class="btn primary" type="submit" id="submitBtn">Submit request</button>' +
@@ -154,15 +143,12 @@
 
     var payload = {
       requesterName: form.requesterName.value.trim(),
-      requesterEmail: form.requesterEmail.value.trim(),
       team: form.team.value,
       projectName: form.projectName.value.trim(),
       workType: form.workType.value,
       brief: form.brief.value.trim(),
-      priority: (form.priority && form.priority.value) || "p2",
       neededBy: form.neededBy.value,
       whereUsed: form.whereUsed.value,
-      formatSpecs: form.formatSpecs.value.trim(),
       referenceLinks: form.referenceLinks.value.trim(),
     };
 
