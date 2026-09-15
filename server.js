@@ -19,7 +19,13 @@ const DATA_FILE = path.join(DATA_DIR, "requests.json");
 const RAW_SLACK = (process.env.SLACK_WEBHOOK_URL || "").trim();
 const SLACK_WEBHOOK_URL =
   RAW_SLACK && !/XXX|YYY|ZZZ|your.webhook|example/i.test(RAW_SLACK) ? RAW_SLACK : "";
-const APP_URL = (process.env.APP_URL || "").replace(/\/$/, "");
+const APP_URL = (
+  process.env.APP_URL ||
+  (process.env.RAILWAY_PUBLIC_DOMAIN
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+    : "https://web-production-e4f0f.up.railway.app")
+).replace(/\/$/, "");
+const FORM_URL = APP_URL;
 
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
@@ -66,7 +72,7 @@ function fmtDate(iso) {
   return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
-/** Short Slack message — key fields only */
+/** Short Slack message — key fields + form link */
 function buildSlackPayload(req) {
   const text =
     `*New design request* · \`${req.id}\`\n` +
@@ -74,7 +80,8 @@ function buildSlackPayload(req) {
     `• *Team:* ${req.team}\n` +
     `• *Project:* ${req.projectName}\n` +
     `• *Needed by:* ${fmtDate(req.neededBy)}\n` +
-    `• *Where used:* ${req.whereUsed || "—"}`;
+    `• *Where used:* ${req.whereUsed || "—"}\n` +
+    `• *Submit a request:* ${FORM_URL}`;
 
   return {
     text: `New design request: ${req.projectName} (${req.id})`,
@@ -100,8 +107,45 @@ function buildSlackPayload(req) {
         },
       },
       {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `📝 <${FORM_URL}|Open design request form>`,
+        },
+      },
+      {
         type: "context",
-        elements: [{ type: "mrkdwn", text: `\`${req.id}\`` }],
+        elements: [{ type: "mrkdwn", text: `\`${req.id}\` · form: ${FORM_URL}` }],
+      },
+    ],
+  };
+}
+
+function buildFormPinPayload() {
+  return {
+    text: `Design request form: ${FORM_URL}`,
+    blocks: [
+      {
+        type: "header",
+        text: { type: "plain_text", text: "Design request form", emoji: true },
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text:
+            `Need creative work? Submit here — the design team gets notified automatically.\n\n` +
+            `👉 <${FORM_URL}|${FORM_URL}>`,
+        },
+      },
+      {
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text: "Please *pin this message* so the form link stays at the top of the channel.",
+          },
+        ],
       },
     ],
   };
@@ -122,6 +166,22 @@ async function notifySlack(request) {
     throw new Error(`Slack ${res.status}: ${body.slice(0, 200)}`);
   }
   return { sent: true };
+}
+
+async function postFormLinkToSlack() {
+  if (!SLACK_WEBHOOK_URL) {
+    return { sent: false, reason: "SLACK_WEBHOOK_URL not set" };
+  }
+  const res = await fetch(SLACK_WEBHOOK_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(buildFormPinPayload()),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Slack ${res.status}: ${body.slice(0, 200)}`);
+  }
+  return { sent: true, formUrl: FORM_URL };
 }
 
 function validateBody(body) {
@@ -145,8 +205,24 @@ app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     slackConfigured: Boolean(SLACK_WEBHOOK_URL),
+    formUrl: FORM_URL,
     time: new Date().toISOString(),
   });
+});
+
+/** Post the form link into the Slack channel (for pinning). */
+app.post("/api/slack/post-form-link", async (_req, res) => {
+  try {
+    const result = await postFormLinkToSlack();
+    if (!result.sent) return res.status(503).json(result);
+    res.json({
+      ok: true,
+      ...result,
+      tip: "In Slack: hover the message → ⋮ More actions → Pin to channel",
+    });
+  } catch (err) {
+    res.status(502).json({ ok: false, error: err.message || String(err) });
+  }
 });
 
 app.get("/api/requests", (_req, res) => {
