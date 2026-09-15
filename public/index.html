@@ -3,34 +3,33 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Spyne Design Desk</title>
+<title>Design Request — Spyne</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-<div class="app">
+<div class="app app--form-only">
   <aside class="sidebar">
     <div class="side-brand">
       <div class="side-logo" aria-hidden="true"></div>
       <div>
-        <b>Spyne Design Desk</b>
-        <span>Request → Slack → Manager</span>
+        <b>Design Request</b>
+        <span>Spyne creative team</span>
       </div>
     </div>
     <nav class="side-nav">
-      <div class="side-label">Workflow</div>
-      <button class="nav-btn" type="button" data-view="request" id="navRequest">
-        <span class="ic">＋</span> Submit request
-      </button>
-      <button class="nav-btn" type="button" data-view="manager" id="navManager">
-        <span class="ic">▦</span> Manager dashboard
-      </button>
+      <div class="side-label">Need design work?</div>
+      <p class="side-copy">Fill out this form and the design team will pick it up. You’ll get a request ID to track it.</p>
+      <ul class="side-steps">
+        <li>Tell us what you need</li>
+        <li>Share the deadline &amp; where it’ll be used</li>
+        <li>Submit — you’re done</li>
+      </ul>
     </nav>
     <div class="side-foot">
-      <div class="health" id="healthChip">Checking…</div>
-      <p class="role-hint">Everyone uses Submit request. Agrim uses Manager dashboard to see full details. Slack only gets a short summary.</p>
+      <p class="role-hint">Questions? Ping the design team on Slack.</p>
     </div>
   </aside>
 
@@ -38,19 +37,16 @@
     <header class="topbar">
       <div>
         <h1 id="pageTitle">Submit a design request</h1>
-        <p class="sub" id="pageSub">Anyone at Spyne · Agrim is notified in Slack</p>
+        <p class="sub" id="pageSub">Anyone at Spyne can use this form</p>
       </div>
-      <div class="top-actions" id="topActions"></div>
     </header>
     <div class="content">
       <div id="banner"></div>
       <section id="view-request"></section>
-      <section id="view-manager" hidden></section>
       <section id="view-confirm" hidden></section>
     </div>
   </div>
 </div>
-<div id="drawerHost"></div>
 <script src="/app.js"></script>
 </body>
 </html>
