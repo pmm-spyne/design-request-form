@@ -26,6 +26,12 @@ const APP_URL = (
     : "https://web-production-e4f0f.up.railway.app")
 ).replace(/\/$/, "");
 const FORM_URL = APP_URL;
+// Marketing Central Postgres ingest (same DB as Programs / rest of MC)
+const MC_INGEST_URL = (
+  process.env.MC_DESIGN_INGEST_URL ||
+  "https://marketing-central-dashboard-production.up.railway.app/api/design/ingest"
+).replace(/\/$/, "");
+const MC_INGEST_SECRET = (process.env.MC_DESIGN_INGEST_SECRET || "").trim();
 
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
@@ -500,15 +506,23 @@ app.patch("/api/requests/:id", async (req, res) => {
   res.json({ ok: true, request: row });
 });
 
+app.post("/api/slack/task-done", async (req, res) => {
+  try {
+    const result = await notifySlackDone(req.body || {});
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(502).json({ ok: false, sent: false, reason: err.message || String(err) });
+  }
+});
+
 app.post("/api/requests", async (req, res) => {
   const body = req.body || {};
   const errors = validateBody(body);
   if (errors.length) return res.status(400).json({ error: errors.join(". ") });
 
-  const list = readRequests();
   const now = new Date().toISOString();
-  const record = {
-    id: nextId(list),
+  let record = {
+    id: "",
     status: "new",
     createdAt: now,
     updatedAt: now,
@@ -520,11 +534,9 @@ app.post("/api/requests", async (req, res) => {
     neededBy: String(body.neededBy).trim(),
     whereUsed: String(body.whereUsed).trim(),
     referenceLinks: String(body.referenceLinks || "").trim(),
-    // Kept empty for older dashboard fields
-    requesterEmail: "",
+    requesterEmail: String(body.requesterEmail || "").trim(),
     priority: "p2",
-    formatSpecs: "",
-    // Assignment fields (filled later by manager)
+    formatSpecs: String(body.formatSpecs || "").trim(),
     assignee: null,
     assigneeUsername: "",
     assignees: [],
@@ -537,23 +549,60 @@ app.post("/api/requests", async (req, res) => {
     slackError: null,
   };
 
+  let storage = "local";
+  // Primary: Marketing Central Postgres (same DB as the dashboard)
+  try {
+    const headers = { "Content-Type": "application/json" };
+    if (MC_INGEST_SECRET) headers["X-Design-Ingest-Secret"] = MC_INGEST_SECRET;
+    const mcRes = await fetch(MC_INGEST_URL, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        requesterName: record.requesterName,
+        team: record.team,
+        projectName: record.projectName,
+        workType: record.workType,
+        brief: record.brief,
+        neededBy: record.neededBy,
+        whereUsed: record.whereUsed,
+        referenceLinks: record.referenceLinks,
+        requesterEmail: record.requesterEmail,
+        formatSpecs: record.formatSpecs,
+      }),
+    });
+    const mcData = await mcRes.json().catch(() => ({}));
+    if (!mcRes.ok) {
+      throw new Error(mcData.detail || mcData.error || `MC ingest ${mcRes.status}`);
+    }
+    if (mcData.request) {
+      record = { ...record, ...mcData.request };
+      storage = "postgres";
+    }
+  } catch (err) {
+    // Fallback: local JSON so form never hard-fails if MC is briefly down
+    const list = readRequests();
+    record.id = nextId(list);
+    record.slackError = `MC ingest failed (${err.message || err}); saved locally`;
+    list.push(record);
+    writeRequests(list);
+    storage = "local-fallback";
+  }
+
   let slack;
   try {
     slack = await notifySlack(record);
     if (slack.sent) record.slackNotifiedAt = now;
-    else record.slackError = slack.reason;
+    else record.slackError = (record.slackError ? record.slackError + " · " : "") + (slack.reason || "");
   } catch (err) {
-    record.slackError = err.message || String(err);
+    record.slackError = (record.slackError ? record.slackError + " · " : "") + (err.message || String(err));
     slack = { sent: false, reason: record.slackError };
   }
-
-  list.push(record);
-  writeRequests(list);
 
   res.status(201).json({
     ok: true,
     request: record,
     slack,
+    storage,
   });
 });
 
@@ -565,6 +614,7 @@ app.get(["/", "/manager", "/request"], (_req, res) => {
 app.listen(PORT, () => {
   ensureStore();
   console.log(`Design Desk running on http://localhost:${PORT}`);
+  console.log(`MC ingest: ${MC_INGEST_URL}`);
   console.log(
     SLACK_WEBHOOK_URL
       ? "Slack webhook: configured"
