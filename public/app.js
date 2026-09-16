@@ -180,18 +180,23 @@
       ? '<div class="banner ok">The design team has been notified.</div>'
       : '<div class="banner ok">Your request was saved. The design team will pick it up shortly.</div>';
 
+    var title = String(req.projectName || "").trim() || "Design request";
+    var titleHtml = /^https?:\/\//i.test(title)
+      ? '<a href="' + esc(title) + '" target="_blank" rel="noopener">' + esc(title) + "</a>"
+      : esc(title);
+
     el.innerHTML =
       '<div class="panel confirm"><div class="panel-bd">' +
       '<div class="pill ok">Submitted</div>' +
       '<span class="id">' +
       esc(req.id) +
       "</span>" +
-      '<h2 style="margin:0 0 6px">' +
-      esc(req.projectName) +
+      '<h2 style="margin:0">' +
+      titleHtml +
       "</h2>" +
-      '<p class="note">Save this ID if you need to follow up with the design team.</p>' +
+      '<p class="note">Saved to Marketing Central. Save this ID if you need to follow up with the design team.</p>' +
       slackNote +
-      '<div style="margin-top:18px"><button class="btn primary" type="button" id="goNew">Submit another request</button></div>' +
+      '<div style="margin-top:8px"><button class="btn primary" type="button" id="goNew">Submit another request</button></div>' +
       "</div></div>";
 
     $("#goNew").onclick = function () {

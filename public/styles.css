@@ -45,19 +45,36 @@ a{color:var(--accent)}
 .form-wide{max-width:none;width:100%}
 .app--form-only .main{min-width:0}
 .app--form-only .content{padding:22px 32px 64px;max-width:none}
-.app--form-only .panel-bd{
+.app--form-only .form-wide > .panel-bd{
   display:grid;
   grid-template-columns:1fr 1fr;
   gap:16px 20px;
   align-items:start;
 }
-.app--form-only .panel-bd > .f:nth-child(5),
-.app--form-only .panel-bd > .f:nth-child(8),
-.app--form-only .panel-bd > .form-actions{
+.app--form-only .form-wide > .panel-bd > .f:nth-child(5),
+.app--form-only .form-wide > .panel-bd > .f:nth-child(8),
+.app--form-only .form-wide > .panel-bd > .form-actions{
   grid-column:1 / -1;
 }
 @media (max-width:900px){
-  .app--form-only .panel-bd{grid-template-columns:1fr}
+  .app--form-only .form-wide > .panel-bd{grid-template-columns:1fr}
+}
+/* Confirm must stay single-column — do not inherit the form grid */
+.app--form-only .confirm > .panel-bd{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:12px;
+  text-align:center;
+}
+.app--form-only .confirm > .panel-bd .id{
+  order:-1;
+}
+.app--form-only .confirm > .panel-bd h2{
+  word-break:break-word;
+  max-width:100%;
+  font-size:18px;
+  line-height:1.35;
 }
 .app--form-only .req-layout{display:block}
 .side-label{font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.4);padding:12px 10px 6px}
