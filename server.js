@@ -347,24 +347,74 @@ app.patch("/api/requests/:id", async (req, res) => {
 
   if (body.expectedDate !== undefined) row.expectedDate = body.expectedDate || "";
 
-  const nextStatus = body.status ? String(body.status) : "";
-  const markingDone =
-    nextStatus === "complete" ||
-    nextStatus === "delivered" ||
-    nextStatus === "done";
+  function partDone(a) {
+    const s = String((a && a.status) || "").toLowerCase();
+    return s === "complete" || s === "delivered" || s === "done";
+  }
 
-  if (markingDone) {
+  function ensureAssignees() {
+    if (!Array.isArray(row.assignees)) row.assignees = [];
+    return row.assignees;
+  }
+
+  function allPartsComplete() {
+    const parts = ensureAssignees();
+    return parts.length > 0 && parts.every(partDone);
+  }
+
+  // Designer marks their own portion complete (no Slack yet)
+  if (body.completeOwnPart) {
+    const who = normUser(body.completedBy || body.updatedBy || "");
+    if (!who) {
+      return res.status(400).json({ error: "completedBy is required" });
+    }
+    const parts = ensureAssignees();
+    const mine = parts.find((a) => normUser(a.username || a.id) === who);
+    if (!mine) {
+      return res.status(403).json({ error: "You are not assigned to this task" });
+    }
+    mine.status = "complete";
+    mine.completedAt = now;
+    row.lastPartCompletedBy = who;
+    row.updatedAt = now;
+    row.updatedBy = who;
+
+    if (allPartsComplete()) {
+      // Ready for final share — not fully "complete" until Slack/link sent
+      row.status = "ready_to_share";
+    } else if (row.status === "new" || row.status === "unassigned") {
+      row.status = "in_progress";
+    } else if (row.status !== "ready_to_share" && row.status !== "complete") {
+      row.status = "in_progress";
+    }
+
+    list[idx] = row;
+    writeRequests(list);
+    return res.json({
+      ok: true,
+      request: row,
+      allPartsComplete: allPartsComplete(),
+      canSendFinal: allPartsComplete() && !row.completionSlackAt,
+    });
+  }
+
+  // Final share: only when every collaborator completed their part
+  if (body.sendToSlack || body.sendFinal) {
+    if (!allPartsComplete()) {
+      return res.status(400).json({
+        error: "All collaborators must complete their part before sharing",
+      });
+    }
     const link = String(body.completionLink || body.deliveryLink || "").trim();
     if (!link || !isValidDeliveryLink(link)) {
       return res.status(400).json({
-        error: "Attach a Drive or Figma link (https://…) to mark this done",
+        error: "Attach a Drive or Figma link (https://…) to send to Slack",
       });
     }
     row.completionLink = link;
     row.completedAt = now;
-    row.completedBy = String(body.updatedBy || body.completedBy || "").trim();
-    row.status = nextStatus === "delivered" ? "delivered" : "complete";
-
+    row.completedBy = String(body.updatedBy || body.completedBy || row.lastPartCompletedBy || "").trim();
+    row.status = "complete";
     try {
       const slack = await notifySlackDone(row);
       if (slack.sent) row.completionSlackAt = now;
@@ -372,11 +422,57 @@ app.patch("/api/requests/:id", async (req, res) => {
     } catch (err) {
       row.completionSlackError = err.message || String(err);
     }
+    row.updatedAt = now;
+    row.updatedBy = body.updatedBy || "";
+    list[idx] = row;
+    writeRequests(list);
+    return res.json({ ok: true, request: row, slackSent: Boolean(row.completionSlackAt) });
+  }
+
+  // Legacy: status=complete without per-part — treat as completeOwnPart for solo, or require all parts
+  const nextStatus = body.status ? String(body.status) : "";
+  if (nextStatus === "complete" || nextStatus === "delivered" || nextStatus === "done") {
+    const who = normUser(body.updatedBy || body.completedBy || "");
+    const parts = ensureAssignees();
+    if (parts.length && who) {
+      const mine = parts.find((a) => normUser(a.username || a.id) === who);
+      if (mine && !partDone(mine)) {
+        mine.status = "complete";
+        mine.completedAt = now;
+        row.lastPartCompletedBy = who;
+      }
+    }
+    if (parts.length && !allPartsComplete()) {
+      row.status = "in_progress";
+      row.updatedAt = now;
+      list[idx] = row;
+      writeRequests(list);
+      return res.json({
+        ok: true,
+        request: row,
+        allPartsComplete: false,
+        message: "Your part is complete. Waiting for remaining collaborators.",
+      });
+    }
+    // All done — stash link if provided but don't force Slack unless sendToSlack
+    if (body.completionLink) {
+      row.completionLink = String(body.completionLink).trim();
+    }
+    row.status = "ready_to_share";
+    row.updatedAt = now;
+    list[idx] = row;
+    writeRequests(list);
+    return res.json({
+      ok: true,
+      request: row,
+      allPartsComplete: true,
+      canSendFinal: !row.completionSlackAt,
+    });
   } else if (body.status) {
     row.status = String(body.status);
   }
 
-  if (body.completionLink !== undefined && !markingDone) {
+  if (body.completionLink !== undefined) {
     row.completionLink = String(body.completionLink || "").trim();
   }
 
