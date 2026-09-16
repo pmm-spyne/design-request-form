@@ -215,6 +215,22 @@ async function notifySlackDone(request) {
   return { sent: true };
 }
 
+async function notifySlack(request) {
+  if (!SLACK_WEBHOOK_URL) {
+    return { sent: false, reason: "SLACK_WEBHOOK_URL not set" };
+  }
+  const res = await fetch(SLACK_WEBHOOK_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(buildSlackPayload(request)),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Slack ${res.status}: ${body.slice(0, 200)}`);
+  }
+  return { sent: true };
+}
+
 async function postFormLinkToSlack() {
   if (!SLACK_WEBHOOK_URL) {
     return { sent: false, reason: "SLACK_WEBHOOK_URL not set" };
