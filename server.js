@@ -94,7 +94,7 @@ function buildSlackPayload(req) {
     blocks: [
       {
         type: "header",
-        text: { type: "plain_text", text: "New design request", emoji: true },
+        text: { type: "plain_text", text: `New design request — ${req.id}`.slice(0, 150), emoji: true },
       },
       {
         type: "section",
@@ -171,7 +171,7 @@ function buildDoneSlackPayload(req) {
     blocks: [
       {
         type: "header",
-        text: { type: "plain_text", text: "Design task done", emoji: true },
+        text: { type: "plain_text", text: `Completed — ${req.id}`.slice(0, 150), emoji: true },
       },
       {
         type: "section",
@@ -221,6 +221,98 @@ async function notifySlackDone(request) {
   return { sent: true };
 }
 
+function buildLifecyclePayload(kind, req) {
+  const id = req.id || "DSN";
+  const title = req.projectName || "Design request";
+  const people = (req.assignees || [])
+    .map((a) => a.name || a.username)
+    .filter(Boolean)
+    .join(", ");
+  const expected = fmtDate(req.expectedDate);
+  const current = req.currentIteration || {};
+  let header = `${id}`;
+  let body = `*${title}*`;
+  if (kind === "assigned") {
+    header = `${id} — Assigned`;
+    body =
+      `*${title}*\n` +
+      `Assigned to: ${people || "—"}\n` +
+      `Expected delivery: ${expected}\n` +
+      `Status: Assigned`;
+  } else if (kind === "ready") {
+    header = `${id} — Ready for feedback`;
+    const link = current.submissionLink || "";
+    body =
+      `*${title}*\n` +
+      `Your design is ready for feedback.\n` +
+      (link ? `Draft: ${link}\n` : "") +
+      `Status: Awaiting Feedback`;
+  } else if (kind === "changes") {
+    header = `${id} — Changes requested`;
+    body =
+      `*${title}*\n` +
+      `Feedback: ${current.feedbackText || "—"}\n` +
+      `Status: Changes Requested`;
+  }
+  return {
+    text: `${header} · ${title}`,
+    blocks: [
+      {
+        type: "header",
+        text: { type: "plain_text", text: String(header).slice(0, 150), emoji: true },
+      },
+      { type: "section", text: { type: "mrkdwn", text: body } },
+    ],
+  };
+}
+
+app.post("/api/slack/lifecycle", async (req, res) => {
+  try {
+    if (!SLACK_WEBHOOK_URL) {
+      return res.json({ ok: true, sent: false, reason: "SLACK_WEBHOOK_URL not set" });
+    }
+    const kind = String((req.body || {}).kind || "");
+    const request = (req.body || {}).request || {};
+    const slackRes = await fetch(SLACK_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildLifecyclePayload(kind, request)),
+    });
+    if (!slackRes.ok) {
+      const text = await slackRes.text().catch(() => "");
+      return res.status(502).json({ ok: false, sent: false, reason: text.slice(0, 200) });
+    }
+    return res.json({ ok: true, sent: true });
+  } catch (err) {
+    return res.status(502).json({ ok: false, sent: false, reason: err.message || String(err) });
+  }
+});
+
+app.post("/api/track", async (req, res) => {
+  const body = req.body || {};
+  const contact = String(body.contact || "").trim();
+  const email = contact.includes("@") ? contact : String(body.email || "").trim();
+  const slackUserId = contact.includes("@")
+    ? String(body.slackUserId || "").trim()
+    : contact || String(body.slackUserId || "").trim();
+  const trackUrl = MC_INGEST_URL.replace(/\/ingest\/?$/, "/track");
+  try {
+    const mcRes = await fetch(trackUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        requestId: String(body.requestId || body.id || "").trim(),
+        email,
+        slackUserId,
+      }),
+    });
+    const data = await mcRes.json().catch(() => ({}));
+    return res.status(mcRes.status).json(data.detail ? { error: data.detail } : data);
+  } catch (err) {
+    return res.status(502).json({ error: err.message || "Could not check that request" });
+  }
+});
+
 async function notifySlack(request) {
   if (!SLACK_WEBHOOK_URL) {
     return { sent: false, reason: "SLACK_WEBHOOK_URL not set" };
@@ -267,6 +359,9 @@ function validateBody(body) {
   for (const [key, label] of required) {
     if (!body[key] || !String(body[key]).trim()) errors.push(`${label} is required`);
   }
+  const email = String(body.requesterEmail || "").trim();
+  const slackId = String(body.requesterSlackId || body.slackUserId || "").trim();
+  if (!email && !slackId) errors.push("Email or Slack User ID is required");
   return errors;
 }
 
@@ -535,6 +630,7 @@ app.post("/api/requests", async (req, res) => {
     whereUsed: String(body.whereUsed).trim(),
     referenceLinks: String(body.referenceLinks || "").trim(),
     requesterEmail: String(body.requesterEmail || "").trim(),
+    requesterSlackId: String(body.requesterSlackId || "").trim(),
     priority: "p2",
     formatSpecs: String(body.formatSpecs || "").trim(),
     assignee: null,
@@ -567,6 +663,7 @@ app.post("/api/requests", async (req, res) => {
         whereUsed: record.whereUsed,
         referenceLinks: record.referenceLinks,
         requesterEmail: record.requesterEmail,
+        requesterSlackId: record.requesterSlackId,
         formatSpecs: record.formatSpecs,
       }),
     });

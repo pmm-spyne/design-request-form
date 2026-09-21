@@ -51,8 +51,7 @@ a{color:var(--accent)}
   gap:16px 20px;
   align-items:start;
 }
-.app--form-only .form-wide > .panel-bd > .f:nth-child(5),
-.app--form-only .form-wide > .panel-bd > .f:nth-child(8),
+.app--form-only .form-wide > .panel-bd > .span2,
 .app--form-only .form-wide > .panel-bd > .form-actions{
   grid-column:1 / -1;
 }
