@@ -361,7 +361,7 @@ function validateBody(body) {
   }
   const email = String(body.requesterEmail || "").trim();
   const slackId = String(body.requesterSlackId || body.slackUserId || "").trim();
-  if (!email && !slackId) errors.push("Email or Slack User ID is required");
+  if (!email) errors.push("Email is required");
   return errors;
 }
 

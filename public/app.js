@@ -78,11 +78,11 @@
       '<input name="requesterName" autocomplete="name" required placeholder="e.g. Nidhi Singh"></label>';
 
     html +=
-      '<label class="f">Email <span class="hint">email or Slack ID required</span>' +
-      '<input name="requesterEmail" type="email" autocomplete="email" placeholder="you@spyne.ai"></label>';
+      '<label class="f">Email <span class="req">*</span>' +
+      '<input name="requesterEmail" type="email" autocomplete="email" required placeholder="you@spyne.ai"></label>';
 
     html +=
-      '<label class="f">Slack User ID <span class="hint">email or Slack ID required</span>' +
+      '<label class="f">Slack User ID <span class="hint">optional</span>' +
       '<input name="requesterSlackId" placeholder="e.g. U012ABCDEF" autocomplete="off"></label>';
 
     html +=
@@ -136,7 +136,6 @@
     var form = $("#reqForm");
     form.elements.neededBy.value = todayISO();
     form.onsubmit = onSubmit;
-    renderCheck();
   }
 
   async function onSubmit(e) {
@@ -146,8 +145,8 @@
     if (!form.reportValidity()) return;
     var email = form.requesterEmail.value.trim();
     var slackId = form.requesterSlackId.value.trim();
-    if (!email && !slackId) {
-      banner("err", "Add an email or a Slack User ID so we can update you.");
+    if (!email) {
+      banner("err", "Email is required so you can see this request in Marketing Central.");
       return;
     }
 
@@ -211,7 +210,7 @@
       '<h2 style="margin:0">' +
       titleHtml +
       "</h2>" +
-      '<p class="note">Same ID for every revision. Check it anytime on this page.</p>' +
+      '<p class="note">Same ID for every revision. Open Design in Marketing Central to follow it.</p>' +
       slackNote +
       '<div style="margin-top:8px"><button class="btn primary" type="button" id="goNew">Submit another request</button></div>' +
       "</div></div>";
@@ -219,7 +218,6 @@
     $("#goNew").onclick = function () {
       renderRequest();
     };
-    renderCheck();
   }
 
   function renderCheck() {
