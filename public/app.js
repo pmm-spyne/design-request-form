@@ -229,10 +229,10 @@
     el.innerHTML =
       '<form class="panel" id="checkForm">' +
       '<div class="panel-hd"><h2>Check your request</h2>' +
-      "<p>Use the same page. Enter your request ID and the email or Slack ID from the form.</p></div>" +
+      "<p>Enter the request ID. Older requests need only that. If the form had an email or Slack ID, enter it too.</p></div>" +
       '<div class="panel-bd">' +
       '<label class="f">Request ID<input name="requestId" placeholder="DSN-0012" required></label>' +
-      '<label class="f">Email or Slack User ID<input name="contact" placeholder="you@spyne.ai or U012…" required></label>' +
+      '<label class="f">Email or Slack User ID <span class="hint">only if the request has one</span><input name="contact" placeholder="you@spyne.ai or U012…"></label>' +
       '<div class="form-actions"><button class="btn primary" type="submit">Check status</button></div>' +
       '<div id="checkResult"></div>' +
       "</div></form>";
