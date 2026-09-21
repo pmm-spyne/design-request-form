@@ -63,7 +63,17 @@
     return data;
   }
 
+  function setNav(which) {
+    var req = $("#navRequest");
+    var mine = $("#navMine");
+    if (req) req.setAttribute("aria-current", which === "request" ? "true" : "false");
+    if (mine) mine.setAttribute("aria-current", which === "mine" ? "true" : "false");
+  }
+
   function renderRequest() {
+    setNav("request");
+    var mine = $("#view-mine");
+    if (mine) mine.hidden = true;
     $("#pageTitle").textContent = "Submit a design request";
     $("#pageSub").textContent = "Tell us what you need — the design team takes it from here";
 
@@ -146,7 +156,7 @@
     var email = form.requesterEmail.value.trim();
     var slackId = form.requesterSlackId.value.trim();
     if (!email) {
-      banner("err", "Email is required so you can see this request in Marketing Central.");
+      banner("err", "Email is required so you can see this request in My requests.");
       return;
     }
 
@@ -210,7 +220,7 @@
       '<h2 style="margin:0">' +
       titleHtml +
       "</h2>" +
-      '<p class="note">Same ID for every revision. Open Design in Marketing Central to follow it.</p>' +
+      '<p class="note">Marketing teammates follow this in Marketing Central. Everyone else opens My requests on this page with the same email.</p>' +
       slackNote +
       '<div style="margin-top:8px"><button class="btn primary" type="button" id="goNew">Submit another request</button></div>' +
       "</div></div>";
@@ -270,6 +280,114 @@
       box.innerHTML = '<div class="banner err">' + esc(err.message) + "</div>";
     }
   }
+
+  function renderMine() {
+    setNav("mine");
+    $("#pageTitle").textContent = "My requests";
+    $("#pageSub").textContent = "For anyone who is not in Marketing Central";
+    $("#view-request").hidden = true;
+    $("#view-confirm").hidden = true;
+    var el = $("#view-mine");
+    el.hidden = false;
+    var saved = "";
+    try { saved = sessionStorage.getItem("designRequesterEmail") || ""; } catch (e) { saved = ""; }
+    el.innerHTML =
+      '<form class="panel" id="mineForm">' +
+      '<div class="panel-hd"><h2>See your requests</h2>' +
+      "<p>Use the email from the form. Newest requests are first.</p></div>" +
+      '<div class="panel-bd">' +
+      '<label class="f">Email<input name="email" type="email" required placeholder="you@spyne.ai" value="' + esc(saved) + '"></label>' +
+      '<div class="form-actions"><button class="btn primary" type="submit">Show my requests</button></div>' +
+      '<div id="mineResult"></div>' +
+      "</div></form>";
+    $("#mineForm").onsubmit = onMine;
+    if (saved) onMine({ preventDefault: function () {}, target: $("#mineForm") });
+  }
+
+  async function onMine(e) {
+    e.preventDefault();
+    var form = e.target;
+    var email = form.email.value.trim();
+    var box = $("#mineResult");
+    box.innerHTML = "";
+    try { sessionStorage.setItem("designRequesterEmail", email); } catch (err) {}
+    try {
+      var data = await api("/api/mine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email }),
+      });
+      var rows = data.requests || [];
+      if (!rows.length) {
+        box.innerHTML = '<div class="banner">No requests for that email yet.</div>';
+        return;
+      }
+      var html = '<table class="mine-table"><thead><tr><th>Request</th><th>Designer</th><th>Status</th><th>Expected</th></tr></thead><tbody>';
+      rows.forEach(function (r) {
+        html += "<tr><td><b>" + esc(r.id) + "</b><div>" + esc(r.projectName || "") + "</div></td>";
+        html += "<td>" + esc((r.designers || []).join(", ") || "Not assigned yet") + "</td>";
+        html += "<td>" + esc(r.statusLabel || "") + "</td>";
+        html += "<td>" + esc(r.expectedDate || "—") + "</td></tr>";
+        html += '<tr><td colspan="4">';
+        if (r.latestLink) {
+          html += '<p><a href="' + esc(r.latestLink) + '" target="_blank" rel="noopener">Open design</a></p>';
+        }
+        (r.messages || []).forEach(function (m) {
+          html += "<p><b>" + esc(m.who || "") + "</b><br>" + esc(m.text || "") + "</p>";
+        });
+        if (r.canRespond) {
+          html += '<label class="f">Your response<textarea data-response="' + esc(r.id) + '" placeholder="Write your response. The designer sees this as feedback."></textarea></label>';
+          html += '<div class="form-actions">';
+          html += '<button class="btn" type="button" data-send="' + esc(r.id) + '">Send response</button>';
+          html += '<button class="btn primary" type="button" data-approve="' + esc(r.id) + '">Approve</button>';
+          html += "</div>";
+        }
+        html += '<p class="note">' + esc(r.message || "") + "</p></td></tr>";
+      });
+      html += "</tbody></table>";
+      box.innerHTML = html;
+      box.querySelectorAll("[data-send], [data-approve]").forEach(function (btn) {
+        btn.onclick = function () { sendResponse(email, btn); };
+      });
+    } catch (err) {
+      box.innerHTML = '<div class="banner err">' + esc(err.message) + "</div>";
+    }
+  }
+
+  async function sendResponse(email, btn) {
+    var id = btn.getAttribute("data-send") || btn.getAttribute("data-approve");
+    var field = document.querySelector('[data-response="' + id + '"]');
+    var text = field ? field.value.trim() : "";
+    var approve = btn.hasAttribute("data-approve");
+    if (!approve && !text) {
+      banner("err", "Write a response first.");
+      return;
+    }
+    btn.disabled = true;
+    try {
+      await api("/api/respond", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: email,
+          requestId: id,
+          action: approve ? "approve" : "response",
+          text: text,
+        }),
+      });
+      banner("ok", approve ? "Approved. The designer will send the final delivery." : "Response sent to the designer.");
+      var form = $("#mineForm");
+      if (form) onMine({ preventDefault: function () {}, target: form });
+    } catch (err) {
+      banner("err", err.message);
+      btn.disabled = false;
+    }
+  }
+
+  var navRequest = $("#navRequest");
+  var navMine = $("#navMine");
+  if (navRequest) navRequest.onclick = function () { renderRequest(); };
+  if (navMine) navMine.onclick = function () { renderMine(); };
 
   renderRequest();
 })();

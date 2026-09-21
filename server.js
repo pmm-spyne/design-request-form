@@ -288,6 +288,43 @@ app.post("/api/slack/lifecycle", async (req, res) => {
   }
 });
 
+app.post("/api/mine", async (req, res) => {
+  const email = String((req.body || {}).email || "").trim();
+  const mineUrl = MC_INGEST_URL.replace(/\/ingest\/?$/, "/mine");
+  try {
+    const mcRes = await fetch(mineUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    const data = await mcRes.json().catch(() => ({}));
+    return res.status(mcRes.status).json(data.detail ? { error: data.detail } : data);
+  } catch (err) {
+    return res.status(502).json({ error: err.message || "Could not load your requests" });
+  }
+});
+
+app.post("/api/respond", async (req, res) => {
+  const body = req.body || {};
+  const respondUrl = MC_INGEST_URL.replace(/\/ingest\/?$/, "/respond");
+  try {
+    const mcRes = await fetch(respondUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: String(body.email || "").trim(),
+        requestId: String(body.requestId || "").trim(),
+        action: String(body.action || "response").trim(),
+        text: String(body.text || "").trim(),
+      }),
+    });
+    const data = await mcRes.json().catch(() => ({}));
+    return res.status(mcRes.status).json(data.detail ? { error: data.detail } : data);
+  } catch (err) {
+    return res.status(502).json({ error: err.message || "Could not send that response" });
+  }
+});
+
 app.post("/api/track", async (req, res) => {
   const body = req.body || {};
   const contact = String(body.contact || "").trim();

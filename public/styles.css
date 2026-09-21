@@ -133,6 +133,9 @@ textarea{min-height:96px;resize:vertical}
 .seg input:checked + label{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
 .form-actions{display:flex;align-items:center;gap:12px;padding-top:8px;border-top:1px solid var(--line)}
 .note{font-size:12px;color:var(--muted)}
+.mine-table{width:100%;border-collapse:collapse;margin-top:8px}
+.mine-table th,.mine-table td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:top;font-size:13px}
+.mine-table th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .slack-card{background:#1A1D21;color:#E8EAED;border-radius:12px;padding:14px 16px;font-size:12.5px;line-height:1.55}
 .slack-card .ttl{color:#9ECBFF;font-weight:600;margin-bottom:8px;font-family:var(--mono);font-size:11px}
 .slack-card ul{margin:0;padding-left:18px}
