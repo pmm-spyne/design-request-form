@@ -35,6 +35,8 @@
     "Other",
   ];
 
+  var peopleList = [];
+
   function $(s, r) {
     return (r || document).querySelector(s);
   }
@@ -63,11 +65,53 @@
     return data;
   }
 
+  function checkedValues(form, name) {
+    return Array.prototype.map
+      .call(form.querySelectorAll('input[name="' + name + '"]:checked'), function (el) {
+        return el.value;
+      })
+      .filter(Boolean);
+  }
+
   function setNav(which) {
     var req = $("#navRequest");
     var mine = $("#navMine");
     if (req) req.setAttribute("aria-current", which === "request" ? "true" : "false");
     if (mine) mine.setAttribute("aria-current", which === "mine" ? "true" : "false");
+  }
+
+  async function loadPeople() {
+    try {
+      var data = await api("/api/directory");
+      peopleList = data.people || [];
+    } catch (err) {
+      peopleList = [];
+    }
+  }
+
+  function multiField(label, name, options, useId) {
+    var html = '<div class="f span2 multi-field"><span>' + label + ' <span class="req">*</span></span>';
+    html += '<div class="seg">';
+    options.forEach(function (opt, i) {
+      var value = useId ? opt.id : opt;
+      var text = useId ? opt.label : opt;
+      var id = name + "-" + i;
+      html +=
+        '<input type="checkbox" name="' +
+        name +
+        '" id="' +
+        id +
+        '" value="' +
+        esc(value) +
+        '">' +
+        '<label for="' +
+        id +
+        '">' +
+        esc(text) +
+        "</label>";
+    });
+    html += "</div></div>";
+    return html;
   }
 
   function renderRequest() {
@@ -84,51 +128,49 @@
     html += '<div class="panel-bd">';
 
     html +=
-      '<label class="f">Who is asking <span class="req">*</span>' +
-      '<input name="requesterName" autocomplete="name" required placeholder="e.g. Nidhi Singh"></label>';
-
-    html +=
-      '<label class="f">Email <span class="req">*</span>' +
-      '<input name="requesterEmail" type="email" autocomplete="email" required placeholder="you@spyne.ai"></label>';
-
-    html +=
-      '<label class="f">Slack User ID <span class="hint">optional</span>' +
-      '<input name="requesterSlackId" placeholder="e.g. U012ABCDEF" autocomplete="off"></label>';
-
-    html +=
-      '<label class="f">Team <span class="req">*</span><select name="team" required><option value="">Select…</option>';
-    TEAMS.forEach(function (t) {
-      html += "<option>" + esc(t) + "</option>";
+      '<label class="f span2">Who is asking <span class="req">*</span>' +
+      '<select name="person" id="personPick" required><option value="">Select name…</option>';
+    peopleList.forEach(function (p) {
+      html +=
+        '<option value="' +
+        esc(p.email) +
+        '" data-name="' +
+        esc(p.name) +
+        '">' +
+        esc(p.name) +
+        " · " +
+        esc(p.email) +
+        "</option>";
     });
     html += "</select></label>";
+    html += '<input type="hidden" name="requesterName" value="">';
+    html += '<input type="hidden" name="requesterEmail" value="">';
+
+    if (!peopleList.length) {
+      html +=
+        '<label class="f">Name <span class="req">*</span>' +
+        '<input name="requesterNameFallback" autocomplete="name" placeholder="e.g. Nidhi Singh"></label>';
+      html +=
+        '<label class="f">Email <span class="req">*</span>' +
+        '<input name="requesterEmailFallback" type="email" autocomplete="email" placeholder="you@spyne.ai"></label>';
+    }
 
     html +=
-      '<label class="f">Project <span class="req">*</span>' +
+      '<label class="f span2 urgent-box"><input type="checkbox" name="urgent" value="1">' +
+      "<div><b>Urgent</b><span>Shows as Urgent on the design board for manager and designers.</span></div></label>";
+
+    html += multiField("Team", "team", TEAMS, false);
+    html +=
+      '<label class="f span2">Project <span class="req">*</span>' +
       '<input name="projectName" required placeholder="e.g. LinkedIn carousel — Studio AI launch"></label>';
-
-    html +=
-      '<label class="f">Work type <span class="req">*</span><select name="workType" required><option value="">Select…</option>';
-    WORK_TYPES.forEach(function (w) {
-      html += '<option value="' + w.id + '">' + esc(w.label) + "</option>";
-    });
-    html += "</select></label>";
-
+    html += multiField("Work type", "workType", WORK_TYPES, true);
     html +=
       '<label class="f span2">Brief / requirements <span class="req">*</span>' +
       '<textarea name="brief" required placeholder="Audience, message, must-include elements, success criteria…"></textarea></label>';
-
     html +=
       '<label class="f">Needed by <span class="req">*</span>' +
       '<input type="date" name="neededBy" required></label>';
-
-    html +=
-      '<label class="f">Where it will be used <span class="req">*</span>' +
-      '<select name="whereUsed" required><option value="">Select…</option>';
-    WHERE_USED.forEach(function (w) {
-      html += "<option>" + esc(w) + "</option>";
-    });
-    html += "</select></label>";
-
+    html += multiField("Where it will be used", "whereUsed", WHERE_USED, false);
     html +=
       '<label class="f span2">Reference links <span class="hint">optional — one per line</span>' +
       '<textarea name="referenceLinks" placeholder="https://…"></textarea></label>';
@@ -145,6 +187,14 @@
 
     var form = $("#reqForm");
     form.elements.neededBy.value = todayISO();
+    var pick = $("#personPick");
+    if (pick) {
+      pick.onchange = function () {
+        var opt = pick.options[pick.selectedIndex];
+        form.requesterEmail.value = pick.value || "";
+        form.requesterName.value = opt ? opt.getAttribute("data-name") || "" : "";
+      };
+    }
     form.onsubmit = onSubmit;
   }
 
@@ -152,13 +202,30 @@
     e.preventDefault();
     clearBanner();
     var form = e.target;
-    if (!form.reportValidity()) return;
-    var email = form.requesterEmail.value.trim();
-    var slackId = form.requesterSlackId.value.trim();
-    if (!email) {
-      banner("err", "Email is required so you can see this request in My requests.");
+    var name = (form.requesterName && form.requesterName.value.trim()) || "";
+    var email = (form.requesterEmail && form.requesterEmail.value.trim()) || "";
+    if (!name && form.requesterNameFallback) name = form.requesterNameFallback.value.trim();
+    if (!email && form.requesterEmailFallback) email = form.requesterEmailFallback.value.trim();
+    if (!name || !email) {
+      banner("err", "Select who is asking (name and email).");
       return;
     }
+    var teams = checkedValues(form, "team");
+    var workTypes = checkedValues(form, "workType");
+    var whereUsed = checkedValues(form, "whereUsed");
+    if (!teams.length) {
+      banner("err", "Select at least one team.");
+      return;
+    }
+    if (!workTypes.length) {
+      banner("err", "Select at least one work type.");
+      return;
+    }
+    if (!whereUsed.length) {
+      banner("err", "Select at least one place it will be used.");
+      return;
+    }
+    if (!form.reportValidity()) return;
 
     var btn = $("#submitBtn");
     var note = $("#formNote");
@@ -166,16 +233,18 @@
     note.textContent = "Submitting…";
 
     var payload = {
-      requesterName: form.requesterName.value.trim(),
-      team: form.team.value,
+      requesterName: name,
+      requesterEmail: email,
+      requesterSlackId: "",
+      team: teams.join(", "),
       projectName: form.projectName.value.trim(),
-      workType: form.workType.value,
+      workType: workTypes.join(", "),
       brief: form.brief.value.trim(),
       neededBy: form.neededBy.value,
-      whereUsed: form.whereUsed.value,
+      whereUsed: whereUsed.join(", "),
       referenceLinks: form.referenceLinks.value.trim(),
-      requesterEmail: email,
-      requesterSlackId: slackId,
+      urgent: !!(form.urgent && form.urgent.checked),
+      priority: form.urgent && form.urgent.checked ? "p0" : "p2",
     };
 
     try {
@@ -214,6 +283,7 @@
     el.innerHTML =
       '<div class="panel confirm"><div class="panel-bd">' +
       '<div class="pill ok">Submitted</div>' +
+      (req.priority === "p0" || req.urgent ? '<div class="pill p0">Urgent</div>' : "") +
       '<span class="id">' +
       esc(req.id) +
       "</span>" +
@@ -228,57 +298,6 @@
     $("#goNew").onclick = function () {
       renderRequest();
     };
-  }
-
-  function renderCheck() {
-    var el = $("#view-check");
-    if (!el) return;
-    el.hidden = false;
-    el.innerHTML =
-      '<form class="panel" id="checkForm">' +
-      '<div class="panel-hd"><h2>Check your request</h2>' +
-      "<p>Enter the request ID. Older requests need only that. If the form had an email or Slack ID, enter it too.</p></div>" +
-      '<div class="panel-bd">' +
-      '<label class="f">Request ID<input name="requestId" placeholder="DSN-0012" required></label>' +
-      '<label class="f">Email or Slack User ID <span class="hint">only if the request has one</span><input name="contact" placeholder="you@spyne.ai or U012…"></label>' +
-      '<div class="form-actions"><button class="btn primary" type="submit">Check status</button></div>' +
-      '<div id="checkResult"></div>' +
-      "</div></form>";
-    $("#checkForm").onsubmit = onCheck;
-  }
-
-  async function onCheck(e) {
-    e.preventDefault();
-    var form = e.target;
-    var box = $("#checkResult");
-    box.innerHTML = "";
-    try {
-      var data = await api("/api/track", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          requestId: form.requestId.value.trim(),
-          contact: form.contact.value.trim(),
-        }),
-      });
-      var r = data.request || {};
-      var html = '<div class="banner ok"><b>' + esc(r.id) + "</b>";
-      if (r.projectName) html += "<br>" + esc(r.projectName);
-      html += "<br>● " + esc(r.statusLabel || r.status || "");
-      if (r.expectedDate) html += "<br>Expected delivery " + esc(r.expectedDate);
-      html += "<br>" + esc(r.message || "");
-      if (r.feedback) html += "<br><br>" + esc(r.feedback);
-      if (r.draftLink) {
-        html += '<br><a href="' + esc(r.draftLink) + '" target="_blank" rel="noopener">View latest version</a>';
-      }
-      if (r.finalLink) {
-        html += '<br><a href="' + esc(r.finalLink) + '" target="_blank" rel="noopener">Open final design</a>';
-      }
-      html += "</div>";
-      box.innerHTML = html;
-    } catch (err) {
-      box.innerHTML = '<div class="banner err">' + esc(err.message) + "</div>";
-    }
   }
 
   function currentMonth() {
@@ -296,15 +315,25 @@
     el.hidden = false;
     var saved = "";
     var savedMonth = currentMonth();
-    try { saved = sessionStorage.getItem("designRequesterEmail") || ""; } catch (e) { saved = ""; }
-    try { savedMonth = sessionStorage.getItem("designRequesterMonth") || currentMonth(); } catch (e2) {}
+    try {
+      saved = sessionStorage.getItem("designRequesterEmail") || "";
+    } catch (e) {
+      saved = "";
+    }
+    try {
+      savedMonth = sessionStorage.getItem("designRequesterMonth") || currentMonth();
+    } catch (e2) {}
     el.innerHTML =
       '<form class="panel" id="mineForm">' +
       '<div class="panel-hd"><h2>See your requests</h2>' +
       "<p>Use the email from the form. Expected delivery is the date the design manager set.</p></div>" +
       '<div class="panel-bd">' +
-      '<label class="f">Email<input name="email" type="email" required placeholder="you@spyne.ai" value="' + esc(saved) + '"></label>' +
-      '<label class="f">Month<input name="month" type="month" required value="' + esc(savedMonth) + '"></label>' +
+      '<label class="f">Email<input name="email" type="email" required placeholder="you@spyne.ai" value="' +
+      esc(saved) +
+      '"></label>' +
+      '<label class="f">Month<input name="month" type="month" required value="' +
+      esc(savedMonth) +
+      '"></label>' +
       '<div class="form-actions"><button class="btn primary" type="submit">Show my requests</button></div>' +
       '<div id="mineResult"></div>' +
       "</div></form>";
@@ -334,29 +363,49 @@
         box.innerHTML = '<div class="banner">No requests for that email in this month.</div>';
         return;
       }
-      var html = '<table class="mine-table"><thead><tr><th>Request</th><th>Designer</th><th>Status</th><th>Requested</th><th>Expected delivery</th></tr></thead><tbody>';
+      var html =
+        '<table class="mine-table"><thead><tr><th>Request</th><th>Designer</th><th>Status</th><th>Requested</th><th>Expected delivery</th></tr></thead><tbody>';
       rows.forEach(function (r) {
         html += "<tr><td><b>" + esc(r.id) + "</b><div>" + esc(r.projectName || "") + "</div></td>";
         html += "<td>" + esc((r.designers || []).join(", ") || "Not assigned yet") + "</td>";
-        html += "<td>" + esc(r.statusLabel || "") + "</td>";
+        html +=
+          "<td>" +
+          esc(r.statusLabel || "") +
+          (r.isUrgent || r.priority === "p0" ? " · Urgent" : "") +
+          "</td>";
         html += "<td>" + esc(r.requestedAt || "—") + "</td>";
         html += "<td>" + esc(r.expectedDate || "—") + "</td></tr>";
         html += '<tr><td colspan="5">';
         if (r.latestLink) {
-          html += '<p><a href="' + esc(r.latestLink) + '" target="_blank" rel="noopener">Open design</a></p>';
+          html +=
+            '<p><a href="' +
+            esc(r.latestLink) +
+            '" target="_blank" rel="noopener">Open design</a></p>';
         }
         (r.messages || []).forEach(function (m) {
           html += "<p><b>" + esc(m.who || "") + "</b><br>" + esc(m.text || "");
           if (m.link) {
-            html += '<br><a href="' + esc(m.link) + '" target="_blank" rel="noopener">Open design link</a>';
+            html +=
+              '<br><a href="' +
+              esc(m.link) +
+              '" target="_blank" rel="noopener">Open design link</a>';
           }
           html += "</p>";
         });
         if (r.canRespond) {
-          html += '<label class="f">Your response<textarea data-response="' + esc(r.id) + '" placeholder="Write your response. The designer sees this as feedback."></textarea></label>';
+          html +=
+            '<label class="f">Your response<textarea data-response="' +
+            esc(r.id) +
+            '" placeholder="Write your response. The designer sees this as feedback."></textarea></label>';
           html += '<div class="form-actions">';
-          html += '<button class="btn" type="button" data-send="' + esc(r.id) + '">Send response</button>';
-          html += '<button class="btn primary" type="button" data-approve="' + esc(r.id) + '">Approve</button>';
+          html +=
+            '<button class="btn" type="button" data-send="' +
+            esc(r.id) +
+            '">Send response</button>';
+          html +=
+            '<button class="btn primary" type="button" data-approve="' +
+            esc(r.id) +
+            '">Approve</button>';
           html += "</div>";
         }
         html += '<p class="note">' + esc(r.message || "") + "</p></td></tr>";
@@ -364,7 +413,9 @@
       html += "</tbody></table>";
       box.innerHTML = html;
       box.querySelectorAll("[data-send], [data-approve]").forEach(function (btn) {
-        btn.onclick = function () { sendResponse(email, btn); };
+        btn.onclick = function () {
+          sendResponse(email, btn);
+        };
       });
     } catch (err) {
       box.innerHTML = '<div class="banner err">' + esc(err.message) + "</div>";
@@ -392,7 +443,12 @@
           text: text,
         }),
       });
-      banner("ok", approve ? "Approved. The designer will send the final delivery." : "Response sent to the designer.");
+      banner(
+        "ok",
+        approve
+          ? "Approved. The designer will send the final delivery."
+          : "Response sent to the designer."
+      );
       var form = $("#mineForm");
       if (form) onMine({ preventDefault: function () {}, target: form });
     } catch (err) {
@@ -403,8 +459,16 @@
 
   var navRequest = $("#navRequest");
   var navMine = $("#navMine");
-  if (navRequest) navRequest.onclick = function () { renderRequest(); };
-  if (navMine) navMine.onclick = function () { renderMine(); };
+  if (navRequest)
+    navRequest.onclick = function () {
+      renderRequest();
+    };
+  if (navMine)
+    navMine.onclick = function () {
+      renderMine();
+    };
 
-  renderRequest();
+  loadPeople().then(function () {
+    renderRequest();
+  });
 })();

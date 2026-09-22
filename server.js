@@ -403,6 +403,17 @@ function validateBody(body) {
   return errors;
 }
 
+app.get("/api/directory", async (_req, res) => {
+  const directoryUrl = MC_INGEST_URL.replace(/\/ingest\/?$/, "/directory");
+  try {
+    const mcRes = await fetch(directoryUrl);
+    const data = await mcRes.json().catch(() => ({}));
+    return res.status(mcRes.status).json(data.detail ? { error: data.detail } : data);
+  } catch (err) {
+    return res.status(502).json({ error: err.message || "Could not load people list" });
+  }
+});
+
 app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
@@ -669,7 +680,8 @@ app.post("/api/requests", async (req, res) => {
     referenceLinks: String(body.referenceLinks || "").trim(),
     requesterEmail: String(body.requesterEmail || "").trim(),
     requesterSlackId: String(body.requesterSlackId || "").trim(),
-    priority: "p2",
+    priority: body.urgent || String(body.priority || "").toLowerCase() === "p0" ? "p0" : "p2",
+    urgent: Boolean(body.urgent) || String(body.priority || "").toLowerCase() === "p0",
     formatSpecs: String(body.formatSpecs || "").trim(),
     assignee: null,
     assigneeUsername: "",
@@ -703,6 +715,8 @@ app.post("/api/requests", async (req, res) => {
         requesterEmail: record.requesterEmail,
         requesterSlackId: record.requesterSlackId,
         formatSpecs: record.formatSpecs,
+        urgent: record.urgent,
+        priority: record.priority,
       }),
     });
     const mcData = await mcRes.json().catch(() => ({}));
