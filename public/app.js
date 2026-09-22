@@ -23,6 +23,14 @@
     { id: "other", label: "Other" },
   ];
 
+  var REQUEST_KINDS = [
+    "New creative",
+    "Redesign / refresh",
+    "Template / system",
+    "Animation / motion",
+    "Other",
+  ];
+
   var WHERE_USED = [
     "LinkedIn / social",
     "Website / landing page",
@@ -78,6 +86,8 @@
     var mine = $("#navMine");
     if (req) req.setAttribute("aria-current", which === "request" ? "true" : "false");
     if (mine) mine.setAttribute("aria-current", which === "mine" ? "true" : "false");
+    document.body.classList.toggle("view-request", which === "request");
+    document.body.classList.toggle("view-mine", which === "mine");
   }
 
   async function loadPeople() {
@@ -89,9 +99,11 @@
     }
   }
 
-  function multiField(label, name, options, useId) {
-    var html = '<div class="f span2 multi-field"><span>' + label + ' <span class="req">*</span></span>';
-    html += '<div class="seg">';
+  function multiPills(label, name, options, useId) {
+    var html =
+      '<div class="f multi-field"><span class="f-label">' +
+      label +
+      ' <span class="req">*</span></span><div class="seg">';
     options.forEach(function (opt, i) {
       var value = useId ? opt.id : opt;
       var text = useId ? opt.label : opt;
@@ -103,8 +115,7 @@
         id +
         '" value="' +
         esc(value) +
-        '">' +
-        '<label for="' +
+        '"><label for="' +
         id +
         '">' +
         esc(text) +
@@ -119,17 +130,27 @@
     var mine = $("#view-mine");
     if (mine) mine.hidden = true;
     $("#pageTitle").textContent = "Submit a design request";
-    $("#pageSub").textContent = "Tell us what you need — the design team takes it from here";
+    $("#pageSub").textContent = "Tell us what you need — the design team will take it from here";
 
-    var html = '<form class="panel form-wide" id="reqForm" novalidate>';
+    var html = '<form class="form-card" id="reqForm" novalidate>';
+    html += '<div class="form-card-deco form-card-deco--tr" aria-hidden="true"></div>';
+    html += '<div class="form-card-deco form-card-deco--bl" aria-hidden="true"></div>';
+
+    html += '<header class="form-card-hd">';
+    html += '<div class="form-card-ic" aria-hidden="true"></div>';
+    html += "<div><h2>Submit a design request</h2>";
     html +=
-      '<div class="panel-hd"><h2>What do you need designed?</h2>' +
-      "<p>Share enough context so the team can start without chasing you for details.</p></div>";
-    html += '<div class="panel-bd">';
+      "<p>Tell us what you need — the design team will take it from here.</p></div></header>";
+
+    html += '<div class="form-cols">';
+
+    /* —— 1. Basic details —— */
+    html += '<section class="form-col">';
+    html += '<div class="form-sec"><span class="form-num">1</span><b>Basic details</b></div>';
 
     html +=
-      '<label class="f span2">Who is asking <span class="req">*</span>' +
-      '<select name="person" id="personPick" required><option value="">Select name…</option>';
+      '<label class="f">Your name <span class="req">*</span>' +
+      '<select name="person" id="personPick" required><option value="">Select your name</option>';
     peopleList.forEach(function (p) {
       html +=
         '<option value="' +
@@ -155,30 +176,47 @@
         '<input name="requesterEmailFallback" type="email" autocomplete="email" placeholder="you@spyne.ai"></label>';
     }
 
-    html +=
-      '<label class="f span2 urgent-box"><input type="checkbox" name="urgent" value="1">' +
-      "<div><b>Urgent</b><span>Shows as Urgent on the design board for manager and designers.</span></div></label>";
+    html += multiPills("Team", "team", TEAMS, false);
+    html += multiPills("Work type", "workType", WORK_TYPES, true);
 
-    html += multiField("Team", "team", TEAMS, false);
     html +=
-      '<label class="f span2">Project <span class="req">*</span>' +
+      '<label class="f">What do you need designed? <span class="req">*</span>' +
+      '<select name="requestKind" required><option value="">Select a request type</option>';
+    REQUEST_KINDS.forEach(function (k) {
+      html += '<option value="' + esc(k) + '">' + esc(k) + "</option>";
+    });
+    html += "</select></label>";
+
+    html += "</section>";
+
+    /* —— 2. Project details —— */
+    html += '<section class="form-col">';
+    html += '<div class="form-sec"><span class="form-num">2</span><b>Project details</b></div>';
+
+    html +=
+      '<label class="f">Project name <span class="req">*</span>' +
       '<input name="projectName" required placeholder="e.g. LinkedIn carousel — Studio AI launch"></label>';
-    html += multiField("Work type", "workType", WORK_TYPES, true);
     html +=
-      '<label class="f span2">Brief / requirements <span class="req">*</span>' +
+      '<label class="f">Brief / requirements <span class="req">*</span>' +
       '<textarea name="brief" required placeholder="Audience, message, must-include elements, success criteria…"></textarea></label>';
+    html +=
+      '<label class="f">Reference links <span class="hint">(optional)</span>' +
+      '<input name="referenceLinks" type="text" placeholder="https://…"></label>';
     html +=
       '<label class="f">Needed by <span class="req">*</span>' +
       '<input type="date" name="neededBy" required></label>';
-    html += multiField("Where it will be used", "whereUsed", WHERE_USED, false);
-    html +=
-      '<label class="f span2">Reference links <span class="hint">optional — one per line</span>' +
-      '<textarea name="referenceLinks" placeholder="https://…"></textarea></label>';
+    html += multiPills("Where it will be used", "whereUsed", WHERE_USED, false);
 
     html +=
-      '<div class="form-actions span2"><button class="btn primary" type="submit" id="submitBtn">Submit request</button>' +
-      '<span class="note" id="formNote">The design team will be notified automatically.</span></div>';
-    html += "</div></form>";
+      '<label class="urgent-sm"><input type="checkbox" name="urgent" value="1">' +
+      "<span>Urgent</span></label>";
+
+    html +=
+      '<div class="form-actions">' +
+      '<button class="btn primary btn-submit" type="submit" id="submitBtn">Submit request</button>' +
+      '<span class="note" id="formNote" hidden></span></div>';
+
+    html += "</section></div></form>";
 
     var el = $("#view-request");
     el.hidden = false;
@@ -207,18 +245,23 @@
     if (!name && form.requesterNameFallback) name = form.requesterNameFallback.value.trim();
     if (!email && form.requesterEmailFallback) email = form.requesterEmailFallback.value.trim();
     if (!name || !email) {
-      banner("err", "Select who is asking (name and email).");
+      banner("err", "Select your name from the list.");
       return;
     }
     var teams = checkedValues(form, "team");
     var workTypes = checkedValues(form, "workType");
     var whereUsed = checkedValues(form, "whereUsed");
+    var kind = (form.requestKind && form.requestKind.value) || "";
     if (!teams.length) {
       banner("err", "Select at least one team.");
       return;
     }
     if (!workTypes.length) {
       banner("err", "Select at least one work type.");
+      return;
+    }
+    if (!kind) {
+      banner("err", "Select what you need designed.");
       return;
     }
     if (!whereUsed.length) {
@@ -230,7 +273,13 @@
     var btn = $("#submitBtn");
     var note = $("#formNote");
     btn.disabled = true;
-    note.textContent = "Submitting…";
+    if (note) {
+      note.hidden = false;
+      note.textContent = "Submitting…";
+    }
+
+    var brief = form.brief.value.trim();
+    if (kind) brief = "Request type: " + kind + "\n\n" + brief;
 
     var payload = {
       requesterName: name,
@@ -239,10 +288,11 @@
       team: teams.join(", "),
       projectName: form.projectName.value.trim(),
       workType: workTypes.join(", "),
-      brief: form.brief.value.trim(),
+      brief: brief,
       neededBy: form.neededBy.value,
       whereUsed: whereUsed.join(", "),
       referenceLinks: form.referenceLinks.value.trim(),
+      formatSpecs: kind,
       urgent: !!(form.urgent && form.urgent.checked),
       priority: form.urgent && form.urgent.checked ? "p0" : "p2",
     };
@@ -256,7 +306,7 @@
       showConfirm(result);
     } catch (err) {
       banner("err", esc(err.message));
-      note.textContent = "Please fix and try again.";
+      if (note) note.textContent = "Please fix and try again.";
       btn.disabled = false;
     }
   }
@@ -265,6 +315,7 @@
     var req = result.request;
     var slack = result.slack || {};
 
+    setNav("request");
     $("#pageTitle").textContent = "Request submitted";
     $("#pageSub").textContent = "You’re all set";
     $("#view-request").hidden = true;
@@ -281,7 +332,7 @@
       : esc(title);
 
     el.innerHTML =
-      '<div class="panel confirm"><div class="panel-bd">' +
+      '<div class="form-card confirm"><div class="panel-bd">' +
       '<div class="pill ok">Submitted</div>' +
       (req.priority === "p0" || req.urgent ? '<div class="pill p0">Urgent</div>' : "") +
       '<span class="id">' +
@@ -324,10 +375,11 @@
       savedMonth = sessionStorage.getItem("designRequesterMonth") || currentMonth();
     } catch (e2) {}
     el.innerHTML =
-      '<form class="panel" id="mineForm">' +
-      '<div class="panel-hd"><h2>See your requests</h2>' +
-      "<p>Use the email from the form. Expected delivery is the date the design manager set.</p></div>" +
-      '<div class="panel-bd">' +
+      '<form class="form-card form-card--mine" id="mineForm">' +
+      '<header class="form-card-hd"><div class="form-card-ic" aria-hidden="true"></div>' +
+      "<div><h2>See your requests</h2>" +
+      "<p>Use the email from the form. Expected delivery is the date the design manager set.</p></div></header>" +
+      '<div class="mine-bd">' +
       '<label class="f">Email<input name="email" type="email" required placeholder="you@spyne.ai" value="' +
       esc(saved) +
       '"></label>' +
