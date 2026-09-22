@@ -80,8 +80,9 @@ function fmtDate(iso) {
 
 /** Short Slack message — key fields + form link */
 function buildSlackPayload(req) {
+  const urgent = req.urgent || String(req.priority || "").toLowerCase() === "p0";
   const text =
-    `*New design request* · \`${req.id}\`\n` +
+    `*New design request* · \`${req.id}\`${urgent ? " · *URGENT*" : ""}\n` +
     `• *Who:* ${req.requesterName}\n` +
     `• *Team:* ${req.team}\n` +
     `• *Project:* ${req.projectName}\n` +
@@ -90,11 +91,15 @@ function buildSlackPayload(req) {
     `• *Submit a request:* ${FORM_URL}`;
 
   return {
-    text: `New design request: ${req.projectName} (${req.id})`,
+    text: `${urgent ? "URGENT " : ""}New design request: ${req.projectName} (${req.id})`,
     blocks: [
       {
         type: "header",
-        text: { type: "plain_text", text: `New design request — ${req.id}`.slice(0, 150), emoji: true },
+        text: {
+          type: "plain_text",
+          text: `${urgent ? "URGENT · " : ""}New design request — ${req.id}`.slice(0, 150),
+          emoji: true,
+        },
       },
       {
         type: "section",
@@ -103,6 +108,8 @@ function buildSlackPayload(req) {
           { type: "mrkdwn", text: `*Team*\n${req.team}` },
           { type: "mrkdwn", text: `*Project*\n${req.projectName}` },
           { type: "mrkdwn", text: `*Needed by*\n${fmtDate(req.neededBy)}` },
+          { type: "mrkdwn", text: `*Priority*\n${urgent ? "*Urgent*" : "Normal"}` },
+          { type: "mrkdwn", text: `*Work type*\n${req.workType || "—"}` },
         ],
       },
       {
