@@ -435,36 +435,283 @@ app.post("/api/slack/lifecycle", async (req, res) => {
   }
 });
 
-/** Slash command: /design → form link (no dashboard required). */
-app.post("/api/slack/commands", async (req, res) => {
+function option(text, value) {
+  return {
+    text: { type: "plain_text", text: String(text).slice(0, 75) },
+    value: String(value),
+  };
+}
+
+function buildDesignRequestModal() {
+  return {
+    type: "modal",
+    callback_id: "design_request_modal",
+    title: { type: "plain_text", text: "Design request" },
+    submit: { type: "plain_text", text: "Submit" },
+    close: { type: "plain_text", text: "Cancel" },
+    blocks: [
+      {
+        type: "input",
+        block_id: "project_name",
+        label: { type: "plain_text", text: "Project name" },
+        element: {
+          type: "plain_text_input",
+          action_id: "value",
+          placeholder: { type: "plain_text", text: "e.g. LinkedIn carousel — launch" },
+        },
+      },
+      {
+        type: "input",
+        block_id: "team",
+        label: { type: "plain_text", text: "Team" },
+        element: {
+          type: "static_select",
+          action_id: "value",
+          options: [
+            option("Marketing", "Marketing"),
+            option("PMM", "PMM"),
+            option("Growth / Demand Gen", "Growth / Demand Gen"),
+            option("Product", "Product"),
+            option("Sales", "Sales"),
+            option("Customer Success", "Customer Success"),
+            option("Founder's office", "Founder's office"),
+            option("People / Brand", "People / Brand"),
+            option("Other", "Other"),
+          ],
+        },
+      },
+      {
+        type: "input",
+        block_id: "work_type",
+        label: { type: "plain_text", text: "Work type" },
+        element: {
+          type: "static_select",
+          action_id: "value",
+          options: [
+            option("Social / carousel", "social"),
+            option("Video / short-form", "video"),
+            option("Web / landing", "web"),
+            option("PMM / sales collateral", "pmm"),
+            option("Events", "events"),
+            option("3D / backgrounds", "3d"),
+            option("Other", "other"),
+          ],
+        },
+      },
+      {
+        type: "input",
+        block_id: "where_used",
+        label: { type: "plain_text", text: "Where it will be used" },
+        element: {
+          type: "static_select",
+          action_id: "value",
+          options: [
+            option("LinkedIn / social", "LinkedIn / social"),
+            option("Website / landing page", "Website / landing page"),
+            option("Email", "Email"),
+            option("Paid ads", "Paid ads"),
+            option("Sales / CS collateral", "Sales / CS collateral"),
+            option("Event / booth", "Event / booth"),
+            option("In-product", "In-product"),
+            option("Internal", "Internal"),
+            option("Other", "Other"),
+          ],
+        },
+      },
+      {
+        type: "input",
+        block_id: "brief",
+        label: { type: "plain_text", text: "Brief / requirements" },
+        element: {
+          type: "plain_text_input",
+          action_id: "value",
+          multiline: true,
+          placeholder: { type: "plain_text", text: "What do you need?" },
+        },
+      },
+      {
+        type: "input",
+        block_id: "needed_by",
+        label: { type: "plain_text", text: "Needed by" },
+        element: { type: "datepicker", action_id: "value" },
+      },
+      {
+        type: "input",
+        block_id: "reference_links",
+        optional: true,
+        label: { type: "plain_text", text: "Reference links" },
+        element: {
+          type: "plain_text_input",
+          action_id: "value",
+          placeholder: { type: "plain_text", text: "Figma / Drive / Notion (optional)" },
+        },
+      },
+      {
+        type: "input",
+        block_id: "urgent",
+        optional: true,
+        label: { type: "plain_text", text: "Priority" },
+        element: {
+          type: "checkboxes",
+          action_id: "value",
+          options: [option("Urgent", "urgent")],
+        },
+      },
+    ],
+  };
+}
+
+function modalVal(values, blockId) {
+  const block = values && values[blockId];
+  if (!block || !block.value) return "";
+  const el = block.value;
+  if (el.selected_option) return String(el.selected_option.value || "");
+  if (el.selected_date) return String(el.selected_date || "");
+  if (Array.isArray(el.selected_options)) {
+    return el.selected_options.map((o) => o.value).join(",");
+  }
+  return String(el.value || "").trim();
+}
+
+async function slackUserProfile(userId) {
+  const data = await slackApi("users.info", { user: userId });
+  if (!data.ok || !data.user) return { name: "", email: "", slackId: userId || "" };
+  const p = data.user.profile || {};
+  return {
+    name: String(p.real_name || data.user.real_name || data.user.name || "").trim(),
+    email: String(p.email || "").trim().toLowerCase(),
+    slackId: String(userId || "").trim(),
+  };
+}
+
+async function createDesignRequest(body) {
+  const errors = validateBody(body);
+  if (errors.length) {
+    const err = new Error(errors.join(". "));
+    err.status = 400;
+    throw err;
+  }
+  const now = new Date().toISOString();
+  let record = {
+    id: "",
+    status: "new",
+    createdAt: now,
+    updatedAt: now,
+    requesterName: String(body.requesterName).trim(),
+    team: String(body.team).trim(),
+    projectName: String(body.projectName).trim(),
+    workType: String(body.workType || "other").trim(),
+    brief: String(body.brief).trim(),
+    neededBy: String(body.neededBy).trim(),
+    whereUsed: String(body.whereUsed).trim(),
+    referenceLinks: String(body.referenceLinks || "").trim(),
+    requesterEmail: String(body.requesterEmail || "").trim(),
+    requesterSlackId: String(body.requesterSlackId || "").trim(),
+    priority: body.urgent || String(body.priority || "").toLowerCase() === "p0" ? "p0" : "p2",
+    urgent: Boolean(body.urgent) || String(body.priority || "").toLowerCase() === "p0",
+    formatSpecs: String(body.formatSpecs || "").trim(),
+    assignee: null,
+    assigneeUsername: "",
+    assignees: [],
+    expectedDate: null,
+    completionLink: "",
+    completedAt: null,
+    completedBy: "",
+    completionSlackAt: null,
+    slackNotifiedAt: null,
+    slackError: null,
+  };
+
+  let storage = "local";
   try {
-    // Respond in <3s — Slack times out otherwise ("app did not respond").
-    const command = String((req.body || {}).command || "").trim();
-    const text = String((req.body || {}).text || "").trim();
-    const mine = text && text.toLowerCase() === "mine";
-    const url = mine ? `${FORM_URL}/?view=mine` : `${FORM_URL}/?view=request`;
-    const label = mine ? "Open My requests" : "Open design request form";
-    if (command === "/design" || command === "/designrequest" || !command) {
-      return res.status(200).json({
-        response_type: "ephemeral",
-        text: `${label}: ${url}`,
-        blocks: [
+    const headers = { "Content-Type": "application/json" };
+    if (MC_INGEST_SECRET) headers["X-Design-Ingest-Secret"] = MC_INGEST_SECRET;
+    const mcRes = await fetch(MC_INGEST_URL, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        requesterName: record.requesterName,
+        team: record.team,
+        projectName: record.projectName,
+        workType: record.workType,
+        brief: record.brief,
+        neededBy: record.neededBy,
+        whereUsed: record.whereUsed,
+        referenceLinks: record.referenceLinks,
+        requesterEmail: record.requesterEmail,
+        requesterSlackId: record.requesterSlackId,
+        formatSpecs: record.formatSpecs,
+        urgent: record.urgent,
+        priority: record.priority,
+      }),
+    });
+    const mcData = await mcRes.json().catch(() => ({}));
+    if (!mcRes.ok) {
+      throw new Error(mcData.detail || mcData.error || `MC ingest ${mcRes.status}`);
+    }
+    if (mcData.request) {
+      record = { ...record, ...mcData.request };
+      storage = "postgres";
+    }
+  } catch (err) {
+    const list = readRequests();
+    record.id = nextId(list);
+    record.slackError = `MC ingest failed (${err.message || err}); saved locally`;
+    list.push(record);
+    writeRequests(list);
+    storage = "local-fallback";
+  }
+
+  let slack;
+  try {
+    slack = await notifySlack(record);
+    if (slack.sent) record.slackNotifiedAt = now;
+    else record.slackError = (record.slackError ? record.slackError + " · " : "") + (slack.reason || "");
+    const reqSlack = record.requesterSlackId || (await resolveRequesterSlackId(record));
+    if (reqSlack) {
+      await dmSlackUser(
+        reqSlack,
+        `We received your design request ${record.id}: ${record.projectName}`,
+        [
           {
             type: "section",
             text: {
               type: "mrkdwn",
-              text: mine
-                ? `*My design requests*\nTrack Approve / Need Changes without opening Marketing Central.`
-                : `*Submit a design request*\nNo dashboard needed — open the form below.`,
+              text:
+                `*Request received* · \`${record.id}\`\n` +
+                `*${record.projectName}*\n` +
+                `Track it in Marketing Central → Design, or <${FORM_URL}/?view=mine|My requests>.`,
             },
           },
+        ]
+      );
+    }
+  } catch (err) {
+    record.slackError = (record.slackError ? record.slackError + " · " : "") + (err.message || String(err));
+    slack = { sent: false, reason: record.slackError };
+  }
+  return { record, slack, storage };
+}
+
+/** Slash command: /design → open in-Slack modal form. */
+app.post("/api/slack/commands", async (req, res) => {
+  try {
+    const command = String((req.body || {}).command || "").trim();
+    const text = String((req.body || {}).text || "").trim();
+    const triggerId = String((req.body || {}).trigger_id || "").trim();
+
+    if (text && text.toLowerCase() === "mine") {
+      return res.status(200).json({
+        response_type: "ephemeral",
+        text: `My requests: ${FORM_URL}/?view=mine`,
+        blocks: [
           {
             type: "actions",
             elements: [
               {
                 type: "button",
-                text: { type: "plain_text", text: label, emoji: true },
-                url,
+                text: { type: "plain_text", text: "Open My requests", emoji: true },
+                url: `${FORM_URL}/?view=mine`,
                 style: "primary",
               },
             ],
@@ -472,15 +719,107 @@ app.post("/api/slack/commands", async (req, res) => {
         ],
       });
     }
+
+    if (command === "/design" || command === "/designrequest" || !command) {
+      if (!SLACK_BOT_TOKEN) {
+        return res.status(200).json({
+          response_type: "ephemeral",
+          text: `Bot token missing. Open the form: ${FORM_URL}/?view=request`,
+        });
+      }
+      if (!triggerId) {
+        return res.status(200).json({
+          response_type: "ephemeral",
+          text: `Could not open the form. Try again, or use ${FORM_URL}/?view=request`,
+        });
+      }
+      // Ack Slack immediately, then open modal (must use trigger_id within ~3s).
+      res.status(200).send();
+      const opened = await slackApi("views.open", {
+        trigger_id: triggerId,
+        view: buildDesignRequestModal(),
+      });
+      if (!opened.ok) {
+        console.error("views.open failed", opened.error || opened);
+      }
+      return;
+    }
     return res.status(200).json({
       response_type: "ephemeral",
       text: `Unknown command. Try /design`,
     });
   } catch (err) {
-    return res.status(200).json({
-      response_type: "ephemeral",
-      text: err.message || "Could not handle that command",
-    });
+    if (!res.headersSent) {
+      return res.status(200).json({
+        response_type: "ephemeral",
+        text: err.message || "Could not handle that command",
+      });
+    }
+  }
+});
+
+/** Slack interactivity: modal submit (and future buttons). */
+app.post("/api/slack/interactions", async (req, res) => {
+  try {
+    let payload = req.body;
+    if (typeof payload === "string") {
+      try {
+        payload = JSON.parse(payload);
+      } catch {
+        payload = {};
+      }
+    }
+    if (payload && payload.payload && typeof payload.payload === "string") {
+      payload = JSON.parse(payload.payload);
+    }
+
+    if (payload.type === "view_submission" && payload.view && payload.view.callback_id === "design_request_modal") {
+      const values = (payload.view.state && payload.view.state.values) || {};
+      const userId = payload.user && payload.user.id;
+      const profile = await slackUserProfile(userId);
+      if (!profile.email) {
+        return res.status(200).json({
+          response_action: "errors",
+          errors: {
+            project_name:
+              "Your Slack profile has no email visible to the bot. Ask IT to enable email, or use the web form.",
+          },
+        });
+      }
+      const body = {
+        requesterName: profile.name || "Slack user",
+        requesterEmail: profile.email,
+        requesterSlackId: profile.slackId,
+        projectName: modalVal(values, "project_name"),
+        team: modalVal(values, "team"),
+        workType: modalVal(values, "work_type") || "other",
+        whereUsed: modalVal(values, "where_used"),
+        brief: modalVal(values, "brief"),
+        neededBy: modalVal(values, "needed_by"),
+        referenceLinks: modalVal(values, "reference_links"),
+        urgent: String(modalVal(values, "urgent") || "").includes("urgent"),
+      };
+      const errors = validateBody(body);
+      if (errors.length) {
+        return res.status(200).json({
+          response_action: "errors",
+          errors: { project_name: errors[0] },
+        });
+      }
+      // Close modal immediately; create request in background.
+      res.status(200).json({ response_action: "clear" });
+      createDesignRequest(body)
+        .then(({ record }) => {
+          console.log("Slack modal created", record.id);
+        })
+        .catch((err) => console.error("Slack modal create failed", err.message || err));
+      return;
+    }
+
+    return res.status(200).send();
+  } catch (err) {
+    console.error("slack interactions", err);
+    if (!res.headersSent) return res.status(200).send();
   }
 });
 
@@ -614,6 +953,7 @@ app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     slackConfigured: Boolean(SLACK_WEBHOOK_URL),
+    slackBotConfigured: Boolean(SLACK_BOT_TOKEN),
     formUrl: FORM_URL,
     time: new Date().toISOString(),
   });
@@ -857,118 +1197,19 @@ app.post("/api/slack/task-done", async (req, res) => {
 
 app.post("/api/requests", async (req, res) => {
   const body = req.body || {};
-  const errors = validateBody(body);
-  if (errors.length) return res.status(400).json({ error: errors.join(". ") });
-
-  const now = new Date().toISOString();
-  let record = {
-    id: "",
-    status: "new",
-    createdAt: now,
-    updatedAt: now,
-    requesterName: String(body.requesterName).trim(),
-    team: String(body.team).trim(),
-    projectName: String(body.projectName).trim(),
-    workType: String(body.workType || "other").trim(),
-    brief: String(body.brief).trim(),
-    neededBy: String(body.neededBy).trim(),
-    whereUsed: String(body.whereUsed).trim(),
-    referenceLinks: String(body.referenceLinks || "").trim(),
-    requesterEmail: String(body.requesterEmail || "").trim(),
-    requesterSlackId: String(body.requesterSlackId || "").trim(),
-    priority: body.urgent || String(body.priority || "").toLowerCase() === "p0" ? "p0" : "p2",
-    urgent: Boolean(body.urgent) || String(body.priority || "").toLowerCase() === "p0",
-    formatSpecs: String(body.formatSpecs || "").trim(),
-    assignee: null,
-    assigneeUsername: "",
-    assignees: [],
-    expectedDate: null,
-    completionLink: "",
-    completedAt: null,
-    completedBy: "",
-    completionSlackAt: null,
-    slackNotifiedAt: null,
-    slackError: null,
-  };
-
-  let storage = "local";
-  // Primary: Marketing Central Postgres (same DB as the dashboard)
   try {
-    const headers = { "Content-Type": "application/json" };
-    if (MC_INGEST_SECRET) headers["X-Design-Ingest-Secret"] = MC_INGEST_SECRET;
-    const mcRes = await fetch(MC_INGEST_URL, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        requesterName: record.requesterName,
-        team: record.team,
-        projectName: record.projectName,
-        workType: record.workType,
-        brief: record.brief,
-        neededBy: record.neededBy,
-        whereUsed: record.whereUsed,
-        referenceLinks: record.referenceLinks,
-        requesterEmail: record.requesterEmail,
-        requesterSlackId: record.requesterSlackId,
-        formatSpecs: record.formatSpecs,
-        urgent: record.urgent,
-        priority: record.priority,
-      }),
+    const { record, slack, storage } = await createDesignRequest(body);
+    res.status(201).json({
+      ok: true,
+      request: record,
+      slack,
+      storage,
     });
-    const mcData = await mcRes.json().catch(() => ({}));
-    if (!mcRes.ok) {
-      throw new Error(mcData.detail || mcData.error || `MC ingest ${mcRes.status}`);
-    }
-    if (mcData.request) {
-      record = { ...record, ...mcData.request };
-      storage = "postgres";
-    }
   } catch (err) {
-    // Fallback: local JSON so form never hard-fails if MC is briefly down
-    const list = readRequests();
-    record.id = nextId(list);
-    record.slackError = `MC ingest failed (${err.message || err}); saved locally`;
-    list.push(record);
-    writeRequests(list);
-    storage = "local-fallback";
+    const status = err.status || 500;
+    if (status === 400) return res.status(400).json({ error: err.message });
+    return res.status(500).json({ error: err.message || String(err) });
   }
-
-  let slack;
-  try {
-    slack = await notifySlack(record);
-    if (slack.sent) record.slackNotifiedAt = now;
-    else record.slackError = (record.slackError ? record.slackError + " · " : "") + (slack.reason || "");
-    // Personal confirmation to requester (group already got the webhook)
-    const reqSlack = await resolveRequesterSlackId(record);
-    if (reqSlack) {
-      await dmSlackUser(
-        reqSlack,
-        `We received your design request ${record.id}: ${record.projectName}`,
-        [
-          {
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text:
-                `*Request received* · \`${record.id}\`\n` +
-                `*${record.projectName}*\n` +
-                `Track it anytime: <${FORM_URL}/?view=mine|My requests>`,
-            },
-          },
-        ]
-      );
-    }
-  } catch (err) {
-    record.slackError = (record.slackError ? record.slackError + " · " : "") + (err.message || String(err));
-    slack = { sent: false, reason: record.slackError };
-  }
-
-  res.status(201).json({
-    ok: true,
-    request: record,
-    slack,
-    storage,
-  });
 });
 
 // SPA-ish: manager deep links
