@@ -438,19 +438,41 @@ app.post("/api/slack/lifecycle", async (req, res) => {
 /** Slash command: /design → form link (no dashboard required). */
 app.post("/api/slack/commands", async (req, res) => {
   try {
+    // Respond in <3s — Slack times out otherwise ("app did not respond").
     const command = String((req.body || {}).command || "").trim();
     const text = String((req.body || {}).text || "").trim();
-    if (command === "/design" || command === "/designrequest") {
-      const url = `${FORM_URL}/?view=request`;
-      return res.json({
+    const mine = text && text.toLowerCase() === "mine";
+    const url = mine ? `${FORM_URL}/?view=mine` : `${FORM_URL}/?view=request`;
+    const label = mine ? "Open My requests" : "Open design request form";
+    if (command === "/design" || command === "/designrequest" || !command) {
+      return res.status(200).json({
         response_type: "ephemeral",
-        text:
-          text && text.toLowerCase() === "mine"
-            ? `Your requests: ${FORM_URL}/?view=mine`
-            : `Submit a design request (no dashboard needed):\n${url}\n\nTip: \`/design mine\` opens My requests.`,
+        text: `${label}: ${url}`,
+        blocks: [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: mine
+                ? `*My design requests*\nTrack Approve / Need Changes without opening Marketing Central.`
+                : `*Submit a design request*\nNo dashboard needed — open the form below.`,
+            },
+          },
+          {
+            type: "actions",
+            elements: [
+              {
+                type: "button",
+                text: { type: "plain_text", text: label, emoji: true },
+                url,
+                style: "primary",
+              },
+            ],
+          },
+        ],
       });
     }
-    return res.json({
+    return res.status(200).json({
       response_type: "ephemeral",
       text: `Unknown command. Try /design`,
     });
