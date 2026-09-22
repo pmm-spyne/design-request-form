@@ -442,7 +442,22 @@ function option(text, value) {
   };
 }
 
-function buildDesignRequestModal() {
+function buildDesignRequestModal(profile = {}) {
+  const name = String(profile.name || "").trim();
+  const email = String(profile.email || "").trim();
+  const nameEl = {
+    type: "plain_text_input",
+    action_id: "value",
+    placeholder: { type: "plain_text", text: "Your name" },
+  };
+  if (name) nameEl.initial_value = name.slice(0, 150);
+  const emailEl = {
+    type: "plain_text_input",
+    action_id: "value",
+    placeholder: { type: "plain_text", text: "you@company.com" },
+  };
+  if (email) emailEl.initial_value = email.slice(0, 150);
+
   return {
     type: "modal",
     callback_id: "design_request_modal",
@@ -450,6 +465,30 @@ function buildDesignRequestModal() {
     submit: { type: "plain_text", text: "Submit" },
     close: { type: "plain_text", text: "Cancel" },
     blocks: [
+      {
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text:
+              name || email
+                ? "Name & email pulled from your Slack profile — edit if needed."
+                : "Enter your name & work email so we can notify you on updates.",
+          },
+        ],
+      },
+      {
+        type: "input",
+        block_id: "requester_name",
+        label: { type: "plain_text", text: "Your name" },
+        element: nameEl,
+      },
+      {
+        type: "input",
+        block_id: "requester_email",
+        label: { type: "plain_text", text: "Your email" },
+        element: emailEl,
+      },
       {
         type: "input",
         block_id: "project_name",
@@ -735,9 +774,11 @@ app.post("/api/slack/commands", async (req, res) => {
       }
       // Ack Slack immediately, then open modal (must use trigger_id within ~3s).
       res.status(200).send();
+      const userId = String((req.body || {}).user_id || "").trim();
+      const profile = userId ? await slackUserProfile(userId) : {};
       const opened = await slackApi("views.open", {
         trigger_id: triggerId,
-        view: buildDesignRequestModal(),
+        view: buildDesignRequestModal(profile),
       });
       if (!opened.ok) {
         console.error("views.open failed", opened.error || opened);
@@ -777,19 +818,12 @@ app.post("/api/slack/interactions", async (req, res) => {
       const values = (payload.view.state && payload.view.state.values) || {};
       const userId = payload.user && payload.user.id;
       const profile = await slackUserProfile(userId);
-      if (!profile.email) {
-        return res.status(200).json({
-          response_action: "errors",
-          errors: {
-            project_name:
-              "Your Slack profile has no email visible to the bot. Ask IT to enable email, or use the web form.",
-          },
-        });
-      }
+      const nameFromForm = modalVal(values, "requester_name");
+      const emailFromForm = modalVal(values, "requester_email").toLowerCase();
       const body = {
-        requesterName: profile.name || "Slack user",
-        requesterEmail: profile.email,
-        requesterSlackId: profile.slackId,
+        requesterName: nameFromForm || profile.name || "Slack user",
+        requesterEmail: emailFromForm || profile.email,
+        requesterSlackId: profile.slackId || userId || "",
         projectName: modalVal(values, "project_name"),
         team: modalVal(values, "team"),
         workType: modalVal(values, "work_type") || "other",
@@ -799,6 +833,18 @@ app.post("/api/slack/interactions", async (req, res) => {
         referenceLinks: modalVal(values, "reference_links"),
         urgent: String(modalVal(values, "urgent") || "").includes("urgent"),
       };
+      if (!body.requesterEmail || !body.requesterEmail.includes("@")) {
+        return res.status(200).json({
+          response_action: "errors",
+          errors: { requester_email: "Enter a valid work email so we can notify you." },
+        });
+      }
+      if (!String(body.requesterName || "").trim()) {
+        return res.status(200).json({
+          response_action: "errors",
+          errors: { requester_name: "Enter your name." },
+        });
+      }
       const errors = validateBody(body);
       if (errors.length) {
         return res.status(200).json({
