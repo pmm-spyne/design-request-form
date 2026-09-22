@@ -153,6 +153,16 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 .form-actions{display:flex;flex-direction:column;align-items:stretch;gap:8px;padding-top:4px;border-top:0}
 .note{font-size:12px;color:var(--muted)}
 .mine-bd{display:flex;flex-direction:column;gap:14px}
+.mine-cards{display:flex;flex-direction:column;gap:12px;margin-top:8px}
+.mine-card{
+  border:1px solid var(--line);border-radius:14px;padding:14px 16px;background:#FAFBFC
+}
+.mine-card header{display:flex;justify-content:space-between;gap:10px;align-items:baseline;margin-bottom:8px}
+.mine-card header b{font-size:15px}
+.mine-card .mono{font-size:12px;color:var(--muted)}
+.mine-meta{display:flex;flex-wrap:wrap;gap:8px 14px;font-size:12.5px;color:var(--muted);margin-bottom:8px}
+.mine-rounds{margin:10px 0;font-size:13px}
+.mine-round{padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:#fff;margin-top:6px}
 .mine-table{width:100%;border-collapse:collapse;margin-top:8px}
 .mine-table th,.mine-table td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:top;font-size:13px}
 .mine-table th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}

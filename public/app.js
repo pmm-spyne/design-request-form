@@ -415,54 +415,80 @@
         box.innerHTML = '<div class="banner">No requests for that email in this month.</div>';
         return;
       }
-      var html =
-        '<table class="mine-table"><thead><tr><th>Request</th><th>Designer</th><th>Status</th><th>Requested</th><th>Expected delivery</th></tr></thead><tbody>';
+      var html = '<div class="mine-cards">';
       rows.forEach(function (r) {
-        html += "<tr><td><b>" + esc(r.id) + "</b><div>" + esc(r.projectName || "") + "</div></td>";
-        html += "<td>" + esc((r.designers || []).join(", ") || "Not assigned yet") + "</td>";
+        html += '<article class="mine-card">';
+        html += "<header><b>" + esc(r.projectName || r.id) + "</b>";
+        html += '<span class="mono">' + esc(r.id) + "</span></header>";
         html +=
-          "<td>" +
+          '<div class="mine-meta"><span>' +
           esc(r.statusLabel || "") +
           (r.isUrgent || r.priority === "p0" ? " · Urgent" : "") +
-          "</td>";
-        html += "<td>" + esc(r.requestedAt || "—") + "</td>";
-        html += "<td>" + esc(r.expectedDate || "—") + "</td></tr>";
-        html += '<tr><td colspan="5">';
+          "</span>";
+        html +=
+          "<span>Designer: " +
+          esc((r.designers || []).join(", ") || "Not assigned yet") +
+          "</span>";
+        html +=
+          "<span>Expected: " +
+          esc(r.expectedDate || "—") +
+          "</span></div>";
         if (r.latestLink) {
           html +=
             '<p><a href="' +
             esc(r.latestLink) +
             '" target="_blank" rel="noopener">Open design</a></p>';
         }
-        (r.messages || []).forEach(function (m) {
-          html += "<p><b>" + esc(m.who || "") + "</b><br>" + esc(m.text || "");
-          if (m.link) {
+        if (r.rounds && r.rounds.length) {
+          html += '<div class="mine-rounds"><b>Review history</b>';
+          r.rounds.forEach(function (round) {
             html +=
-              '<br><a href="' +
-              esc(m.link) +
-              '" target="_blank" rel="noopener">Open design link</a>';
-          }
-          html += "</p>";
-        });
-        if (r.canRespond) {
+              "<div class=\"mine-round\"><span>Round " +
+              esc(round.round || "?") +
+              "</span>";
+            if (round.feedback) html += "<p>" + esc(round.feedback) + "</p>";
+            if (round.draftLink) {
+              html +=
+                '<a href="' +
+                esc(round.draftLink) +
+                '" target="_blank" rel="noopener">Design link</a>';
+            }
+            html += "</div>";
+          });
+          html += "</div>";
+        }
+        if (r.canRespond || r.canNeedMoreChanges) {
           html +=
             '<label class="f">Your response<textarea data-response="' +
             esc(r.id) +
-            '" placeholder="Write your response. The designer sees this as feedback."></textarea></label>';
+            '" placeholder="' +
+            (r.canNeedMoreChanges
+              ? "Describe what still needs to change…"
+              : "Feedback for Need Changes…") +
+            '"></textarea></label>';
           html += '<div class="form-actions">';
-          html +=
-            '<button class="btn" type="button" data-send="' +
-            esc(r.id) +
-            '">Send response</button>';
-          html +=
-            '<button class="btn primary" type="button" data-approve="' +
-            esc(r.id) +
-            '">Approve</button>';
+          if (r.canNeedMoreChanges) {
+            html +=
+              '<button class="btn" type="button" data-send="' +
+              esc(r.id) +
+              '">Need More Changes</button>';
+          } else {
+            html +=
+              '<button class="btn" type="button" data-send="' +
+              esc(r.id) +
+              '">Need Changes</button>';
+            html +=
+              '<button class="btn primary" type="button" data-approve="' +
+              esc(r.id) +
+              '">Approve &amp; Complete</button>';
+          }
           html += "</div>";
+        } else {
+          html += '<p class="note">' + esc(r.message || "") + "</p>";
         }
-        html += '<p class="note">' + esc(r.message || "") + "</p></td></tr>";
+        html += "</article>";
       });
-      html += "</tbody></table>";
+      html += "</div>";
       box.innerHTML = html;
       box.querySelectorAll("[data-send], [data-approve]").forEach(function (btn) {
         btn.onclick = function () {
@@ -480,7 +506,7 @@
     var text = field ? field.value.trim() : "";
     var approve = btn.hasAttribute("data-approve");
     if (!approve && !text) {
-      banner("err", "Write a response first.");
+      banner("err", "Write feedback for the designer.");
       return;
     }
     btn.disabled = true;
@@ -491,7 +517,7 @@
         body: JSON.stringify({
           email: email,
           requestId: id,
-          action: approve ? "approve" : "response",
+          action: approve ? "approve" : "changes",
           text: text,
         }),
       });
@@ -499,7 +525,7 @@
         "ok",
         approve
           ? "Approved. The designer will send the final delivery."
-          : "Response sent to the designer."
+          : "Feedback sent — the designer will revise."
       );
       var form = $("#mineForm");
       if (form) onMine({ preventDefault: function () {}, target: form });

@@ -19,6 +19,8 @@ const DATA_FILE = path.join(DATA_DIR, "requests.json");
 const RAW_SLACK = (process.env.SLACK_WEBHOOK_URL || "").trim();
 const SLACK_WEBHOOK_URL =
   RAW_SLACK && !/XXX|YYY|ZZZ|your.webhook|example/i.test(RAW_SLACK) ? RAW_SLACK : "";
+const SLACK_BOT_TOKEN = (process.env.SLACK_BOT_TOKEN || process.env.SLACK_BOT || "").trim();
+const SLACK_SIGNING_SECRET = (process.env.SLACK_SIGNING_SECRET || "").trim();
 const APP_URL = (
   process.env.APP_URL ||
   (process.env.RAILWAY_PUBLIC_DOMAIN
@@ -26,6 +28,23 @@ const APP_URL = (
     : "https://web-production-e4f0f.up.railway.app")
 ).replace(/\/$/, "");
 const FORM_URL = APP_URL;
+const MC_BOARD_URL = (
+  process.env.MC_DESIGN_BOARD_URL ||
+  "https://marketing-central-dashboard-production.up.railway.app/design"
+).replace(/\/$/, "");
+
+/** Designer / manager Slack user IDs for personal DMs (one shared bot). */
+const DESIGNER_SLACK = {
+  farooq: "U055Q3E4FAR",
+  anuj: "U0368ST42LR",
+  afnan: "U044AD1SNRW",
+  sourav: "U0986L62JB0",
+  karan: "U051NLQMU4Q",
+  dhruv: "U04MZ04UXM2",
+  mrigendra: "U0A616H54CC",
+  mrigender: "U0A616H54CC",
+  agrim: (process.env.SLACK_MANAGER_ID || "").trim() || "",
+};
 // Marketing Central Postgres ingest (same DB as Programs / rest of MC)
 const MC_INGEST_URL = (
   process.env.MC_DESIGN_INGEST_URL ||
@@ -35,7 +54,71 @@ const MC_INGEST_SECRET = (process.env.MC_DESIGN_INGEST_SECRET || "").trim();
 
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
+
+async function slackApi(method, body) {
+  if (!SLACK_BOT_TOKEN) return { ok: false, error: "no_bot_token" };
+  const res = await fetch(`https://slack.com/api/${method}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${SLACK_BOT_TOKEN}`,
+      "Content-Type": "application/json; charset=utf-8",
+    },
+    body: JSON.stringify(body || {}),
+  });
+  return res.json().catch(() => ({ ok: false, error: "bad_json" }));
+}
+
+async function dmSlackUser(slackUserId, text, blocks) {
+  const uid = String(slackUserId || "").trim();
+  if (!uid || !SLACK_BOT_TOKEN) return { sent: false, reason: "no_dm_target" };
+  const open = await slackApi("conversations.open", { users: uid });
+  if (!open.ok || !open.channel || !open.channel.id) {
+    return { sent: false, reason: open.error || "open_failed" };
+  }
+  const payload = { channel: open.channel.id, text: text || "" };
+  if (blocks) payload.blocks = blocks;
+  const posted = await slackApi("chat.postMessage", payload);
+  return posted.ok
+    ? { sent: true }
+    : { sent: false, reason: posted.error || "post_failed" };
+}
+
+async function lookupSlackIdByEmail(email) {
+  const e = String(email || "").trim().toLowerCase();
+  if (!e || !SLACK_BOT_TOKEN) return "";
+  const res = await fetch(
+    `https://slack.com/api/users.lookupByEmail?email=${encodeURIComponent(e)}`,
+    { headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}` } }
+  );
+  const data = await res.json().catch(() => ({}));
+  return data.ok && data.user && data.user.id ? String(data.user.id) : "";
+}
+
+function designerSlackIds(req) {
+  const ids = new Set();
+  for (const a of req.assignees || []) {
+    const u = String(a.username || a.id || "")
+      .trim()
+      .toLowerCase();
+    if (DESIGNER_SLACK[u]) ids.add(DESIGNER_SLACK[u]);
+    if (a.slackId) ids.add(String(a.slackId).trim());
+  }
+  for (const u of req.assigneeUsernames || []) {
+    const key = String(u || "")
+      .trim()
+      .toLowerCase();
+    if (DESIGNER_SLACK[key]) ids.add(DESIGNER_SLACK[key]);
+  }
+  return [...ids].filter(Boolean);
+}
+
+async function resolveRequesterSlackId(req) {
+  if (req.requesterSlackId) return String(req.requesterSlackId).trim();
+  if (req.requester_slack_id) return String(req.requester_slack_id).trim();
+  return lookupSlackIdByEmail(req.requesterEmail || req.requester_email || "");
+}
 
 function ensureStore() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -245,21 +328,36 @@ function buildLifecyclePayload(kind, req) {
       `*${title}*\n` +
       `Assigned to: ${people || "—"}\n` +
       `Expected delivery: ${expected}\n` +
-      `Status: Assigned`;
+      `Status: Assigned\n` +
+      `<${MC_BOARD_URL}|Open Design board>`;
+  } else if (kind === "started" || kind === "in_progress") {
+    header = `${id} — In Progress`;
+    body = `*${title}*\nDesigner started work.\nStatus: In Progress`;
   } else if (kind === "ready") {
-    header = `${id} — Ready for feedback`;
-    const link = current.submissionLink || "";
+    header = `${id} — Sent for Review`;
+    const link = current.submissionLink || req.latestLink || "";
     body =
       `*${title}*\n` +
-      `Your design is ready for feedback.\n` +
-      (link ? `Draft: ${link}\n` : "") +
-      `Status: Awaiting Feedback`;
+      `Your design is ready for review.\n` +
+      (link ? `Design: ${link}\n` : "") +
+      `Reply with Approve or Need Changes on the board / My requests.\n` +
+      `<${FORM_URL}/?view=mine|Open My requests>`;
   } else if (kind === "changes") {
-    header = `${id} — Changes requested`;
+    header = `${id} — Changes Requested`;
     body =
       `*${title}*\n` +
       `Feedback: ${current.feedbackText || "—"}\n` +
-      `Status: Changes Requested`;
+      `Status: Changes Requested\n` +
+      `<${MC_BOARD_URL}|Open Design board>`;
+  } else if (kind === "approved") {
+    header = `${id} — Approved`;
+    body = `*${title}*\nRequester approved this version. Final delivery is next.`;
+  } else if (kind === "updated") {
+    header = `${id} — Request updated`;
+    body = `*${title}*\nRequester updated the brief / dates.\n<${MC_BOARD_URL}|Open Design board>`;
+  } else if (kind === "complete" || kind === "done") {
+    header = `${id} — Completed`;
+    body = `*${title}*\nFinal design delivered.`;
   }
   return {
     text: `${header} · ${title}`,
@@ -273,25 +371,94 @@ function buildLifecyclePayload(kind, req) {
   };
 }
 
-app.post("/api/slack/lifecycle", async (req, res) => {
-  try {
-    if (!SLACK_WEBHOOK_URL) {
-      return res.json({ ok: true, sent: false, reason: "SLACK_WEBHOOK_URL not set" });
-    }
-    const kind = String((req.body || {}).kind || "");
-    const request = (req.body || {}).request || {};
+async function notifyLifecycle(kind, request) {
+  const payload = buildLifecyclePayload(kind, request || {});
+  let channelSent = false;
+  let channelReason = "";
+  if (SLACK_WEBHOOK_URL) {
     const slackRes = await fetch(SLACK_WEBHOOK_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildLifecyclePayload(kind, request)),
+      body: JSON.stringify(payload),
     });
+    channelSent = slackRes.ok;
     if (!slackRes.ok) {
-      const text = await slackRes.text().catch(() => "");
-      return res.status(502).json({ ok: false, sent: false, reason: text.slice(0, 200) });
+      channelReason = (await slackRes.text().catch(() => "")).slice(0, 200);
     }
-    return res.json({ ok: true, sent: true });
+  } else {
+    channelReason = "SLACK_WEBHOOK_URL not set";
+  }
+
+  const dms = [];
+  const requesterId = await resolveRequesterSlackId(request || {});
+  const designerIds = designerSlackIds(request || {});
+
+  // Who gets a personal DM for each lifecycle event
+  const dmTargets = new Set();
+  if (kind === "assigned") {
+    if (requesterId) dmTargets.add(requesterId);
+    designerIds.forEach((id) => dmTargets.add(id));
+  } else if (kind === "ready") {
+    if (requesterId) dmTargets.add(requesterId);
+  } else if (kind === "changes") {
+    designerIds.forEach((id) => dmTargets.add(id));
+  } else if (kind === "approved" || kind === "started" || kind === "in_progress") {
+    if (requesterId) dmTargets.add(requesterId);
+  } else if (kind === "updated") {
+    if (DESIGNER_SLACK.agrim) dmTargets.add(DESIGNER_SLACK.agrim);
+    designerIds.forEach((id) => dmTargets.add(id));
+  } else if (kind === "complete" || kind === "done") {
+    if (requesterId) dmTargets.add(requesterId);
+    designerIds.forEach((id) => dmTargets.add(id));
+  }
+
+  for (const uid of dmTargets) {
+    dms.push(await dmSlackUser(uid, payload.text, payload.blocks));
+  }
+
+  return {
+    sent: channelSent || dms.some((d) => d.sent),
+    channelSent,
+    channelReason,
+    dms,
+  };
+}
+
+app.post("/api/slack/lifecycle", async (req, res) => {
+  try {
+    const kind = String((req.body || {}).kind || "");
+    const request = (req.body || {}).request || {};
+    const result = await notifyLifecycle(kind, request);
+    return res.json({ ok: true, ...result });
   } catch (err) {
     return res.status(502).json({ ok: false, sent: false, reason: err.message || String(err) });
+  }
+});
+
+/** Slash command: /design → form link (no dashboard required). */
+app.post("/api/slack/commands", async (req, res) => {
+  try {
+    const command = String((req.body || {}).command || "").trim();
+    const text = String((req.body || {}).text || "").trim();
+    if (command === "/design" || command === "/designrequest") {
+      const url = `${FORM_URL}/?view=request`;
+      return res.json({
+        response_type: "ephemeral",
+        text:
+          text && text.toLowerCase() === "mine"
+            ? `Your requests: ${FORM_URL}/?view=mine`
+            : `Submit a design request (no dashboard needed):\n${url}\n\nTip: \`/design mine\` opens My requests.`,
+      });
+    }
+    return res.json({
+      response_type: "ephemeral",
+      text: `Unknown command. Try /design`,
+    });
+  } catch (err) {
+    return res.status(200).json({
+      response_type: "ephemeral",
+      text: err.message || "Could not handle that command",
+    });
   }
 });
 
@@ -749,6 +916,26 @@ app.post("/api/requests", async (req, res) => {
     slack = await notifySlack(record);
     if (slack.sent) record.slackNotifiedAt = now;
     else record.slackError = (record.slackError ? record.slackError + " · " : "") + (slack.reason || "");
+    // Personal confirmation to requester (group already got the webhook)
+    const reqSlack = await resolveRequesterSlackId(record);
+    if (reqSlack) {
+      await dmSlackUser(
+        reqSlack,
+        `We received your design request ${record.id}: ${record.projectName}`,
+        [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text:
+                `*Request received* · \`${record.id}\`\n` +
+                `*${record.projectName}*\n` +
+                `Track it anytime: <${FORM_URL}/?view=mine|My requests>`,
+            },
+          },
+        ]
+      );
+    }
   } catch (err) {
     record.slackError = (record.slackError ? record.slackError + " · " : "") + (err.message || String(err));
     slack = { sent: false, reason: record.slackError };
@@ -773,7 +960,12 @@ app.listen(PORT, () => {
   console.log(`MC ingest: ${MC_INGEST_URL}`);
   console.log(
     SLACK_WEBHOOK_URL
-      ? "Slack webhook: configured"
+      ? "Slack webhook: configured (group channel)"
       : "Slack webhook: NOT set — submissions still save; add SLACK_WEBHOOK_URL to .env"
+  );
+  console.log(
+    SLACK_BOT_TOKEN
+      ? "Slack bot token: set (personal DMs + /design)"
+      : "Slack bot token: NOT set — add SLACK_BOT_TOKEN for DMs and /design"
   );
 });
