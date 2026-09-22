@@ -281,22 +281,30 @@
     }
   }
 
+  function currentMonth() {
+    var d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+  }
+
   function renderMine() {
     setNav("mine");
     $("#pageTitle").textContent = "My requests";
-    $("#pageSub").textContent = "For anyone who is not in Marketing Central";
+    $("#pageSub").textContent = "This month by default — open work carries into later months";
     $("#view-request").hidden = true;
     $("#view-confirm").hidden = true;
     var el = $("#view-mine");
     el.hidden = false;
     var saved = "";
+    var savedMonth = currentMonth();
     try { saved = sessionStorage.getItem("designRequesterEmail") || ""; } catch (e) { saved = ""; }
+    try { savedMonth = sessionStorage.getItem("designRequesterMonth") || currentMonth(); } catch (e2) {}
     el.innerHTML =
       '<form class="panel" id="mineForm">' +
       '<div class="panel-hd"><h2>See your requests</h2>' +
-      "<p>Use the email from the form. Newest requests are first.</p></div>" +
+      "<p>Use the email from the form. Expected delivery is the date the design manager set.</p></div>" +
       '<div class="panel-bd">' +
       '<label class="f">Email<input name="email" type="email" required placeholder="you@spyne.ai" value="' + esc(saved) + '"></label>' +
+      '<label class="f">Month<input name="month" type="month" required value="' + esc(savedMonth) + '"></label>' +
       '<div class="form-actions"><button class="btn primary" type="submit">Show my requests</button></div>' +
       '<div id="mineResult"></div>' +
       "</div></form>";
@@ -308,27 +316,32 @@
     e.preventDefault();
     var form = e.target;
     var email = form.email.value.trim();
+    var month = (form.month && form.month.value) || currentMonth();
     var box = $("#mineResult");
     box.innerHTML = "";
-    try { sessionStorage.setItem("designRequesterEmail", email); } catch (err) {}
+    try {
+      sessionStorage.setItem("designRequesterEmail", email);
+      sessionStorage.setItem("designRequesterMonth", month);
+    } catch (err) {}
     try {
       var data = await api("/api/mine", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email }),
+        body: JSON.stringify({ email: email, month: month }),
       });
       var rows = data.requests || [];
       if (!rows.length) {
-        box.innerHTML = '<div class="banner">No requests for that email yet.</div>';
+        box.innerHTML = '<div class="banner">No requests for that email in this month.</div>';
         return;
       }
-      var html = '<table class="mine-table"><thead><tr><th>Request</th><th>Designer</th><th>Status</th><th>Expected</th></tr></thead><tbody>';
+      var html = '<table class="mine-table"><thead><tr><th>Request</th><th>Designer</th><th>Status</th><th>Requested</th><th>Expected delivery</th></tr></thead><tbody>';
       rows.forEach(function (r) {
         html += "<tr><td><b>" + esc(r.id) + "</b><div>" + esc(r.projectName || "") + "</div></td>";
         html += "<td>" + esc((r.designers || []).join(", ") || "Not assigned yet") + "</td>";
         html += "<td>" + esc(r.statusLabel || "") + "</td>";
+        html += "<td>" + esc(r.requestedAt || "—") + "</td>";
         html += "<td>" + esc(r.expectedDate || "—") + "</td></tr>";
-        html += '<tr><td colspan="4">';
+        html += '<tr><td colspan="5">';
         if (r.latestLink) {
           html += '<p><a href="' + esc(r.latestLink) + '" target="_blank" rel="noopener">Open design</a></p>';
         }

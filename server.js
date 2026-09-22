@@ -290,12 +290,13 @@ app.post("/api/slack/lifecycle", async (req, res) => {
 
 app.post("/api/mine", async (req, res) => {
   const email = String((req.body || {}).email || "").trim();
+  const month = String((req.body || {}).month || "").trim();
   const mineUrl = MC_INGEST_URL.replace(/\/ingest\/?$/, "/mine");
   try {
     const mcRes = await fetch(mineUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, month }),
     });
     const data = await mcRes.json().catch(() => ({}));
     return res.status(mcRes.status).json(data.detail ? { error: data.detail } : data);
