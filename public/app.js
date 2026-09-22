@@ -346,7 +346,11 @@
           html += '<p><a href="' + esc(r.latestLink) + '" target="_blank" rel="noopener">Open design</a></p>';
         }
         (r.messages || []).forEach(function (m) {
-          html += "<p><b>" + esc(m.who || "") + "</b><br>" + esc(m.text || "") + "</p>";
+          html += "<p><b>" + esc(m.who || "") + "</b><br>" + esc(m.text || "");
+          if (m.link) {
+            html += '<br><a href="' + esc(m.link) + '" target="_blank" rel="noopener">Open design link</a>';
+          }
+          html += "</p>";
         });
         if (r.canRespond) {
           html += '<label class="f">Your response<textarea data-response="' + esc(r.id) + '" placeholder="Write your response. The designer sees this as feedback."></textarea></label>';
