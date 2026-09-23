@@ -150,27 +150,24 @@
 
     html +=
       '<label class="f">Your name <span class="req">*</span>' +
-      '<select name="person" id="personPick" required><option value="">Select your name</option>';
+      '<select name="requesterName" id="namePick" required><option value="">Pick your name</option>';
     peopleList.forEach(function (p) {
-      html +=
-        '<option value="' +
-        esc(p.email) +
-        '" data-name="' +
-        esc(p.name) +
-        '">' +
-        esc(p.name) +
-        " · " +
-        esc(p.email) +
-        "</option>";
+      html += '<option value="' + esc(p.name) + '">' + esc(p.name) + "</option>";
     });
     html += "</select></label>";
-    html += '<input type="hidden" name="requesterName" value="">';
-    html += '<input type="hidden" name="requesterEmail" value="">';
+
+    html +=
+      '<label class="f">Your email <span class="req">*</span>' +
+      '<select name="requesterEmail" id="emailPick" required><option value="">Pick your email</option>';
+    peopleList.forEach(function (p) {
+      html += '<option value="' + esc(p.email) + '">' + esc(p.email) + "</option>";
+    });
+    html += "</select></label>";
 
     if (!peopleList.length) {
       html +=
         '<label class="f">Name <span class="req">*</span>' +
-        '<input name="requesterNameFallback" autocomplete="name" placeholder="e.g. Nidhi Singh"></label>';
+        '<input name="requesterNameFallback" autocomplete="name" placeholder="e.g. Komal"></label>';
       html +=
         '<label class="f">Email <span class="req">*</span>' +
         '<input name="requesterEmailFallback" type="email" autocomplete="email" placeholder="you@spyne.ai"></label>';
@@ -225,12 +222,20 @@
 
     var form = $("#reqForm");
     form.elements.neededBy.value = todayISO();
-    var pick = $("#personPick");
-    if (pick) {
-      pick.onchange = function () {
-        var opt = pick.options[pick.selectedIndex];
-        form.requesterEmail.value = pick.value || "";
-        form.requesterName.value = opt ? opt.getAttribute("data-name") || "" : "";
+    var namePick = $("#namePick");
+    var emailPick = $("#emailPick");
+    if (namePick && emailPick) {
+      namePick.onchange = function () {
+        var picked = peopleList.filter(function (p) {
+          return p.name === namePick.value;
+        })[0];
+        if (picked) emailPick.value = picked.email;
+      };
+      emailPick.onchange = function () {
+        var picked = peopleList.filter(function (p) {
+          return p.email === emailPick.value;
+        })[0];
+        if (picked) namePick.value = picked.name;
       };
     }
     form.onsubmit = onSubmit;
@@ -245,7 +250,7 @@
     if (!name && form.requesterNameFallback) name = form.requesterNameFallback.value.trim();
     if (!email && form.requesterEmailFallback) email = form.requesterEmailFallback.value.trim();
     if (!name || !email) {
-      banner("err", "Select your name from the list.");
+      banner("err", "Pick your name and email from the lists.");
       return;
     }
     var teams = checkedValues(form, "team");

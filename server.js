@@ -991,14 +991,8 @@ function validateBody(body) {
 }
 
 app.get("/api/directory", async (_req, res) => {
-  const directoryUrl = MC_INGEST_URL.replace(/\/ingest\/?$/, "/directory");
-  try {
-    const mcRes = await fetch(directoryUrl);
-    const data = await mcRes.json().catch(() => ({}));
-    return res.status(mcRes.status).json(data.detail ? { error: data.detail } : data);
-  } catch (err) {
-    return res.status(502).json({ error: err.message || "Could not load people list" });
-  }
+  // Same marketing roster as Slack /design modal (name + email dropdowns).
+  return res.json({ people: MARKETING_REQUESTERS });
 });
 
 app.get("/api/health", (_req, res) => {
