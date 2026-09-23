@@ -47,8 +47,10 @@ const DESIGNER_SLACK = {
 };
 
 async function managerSlackId() {
-  if (DESIGNER_SLACK.agrim) return DESIGNER_SLACK.agrim;
-  return lookupSlackIdByEmail("agrim@spyne.ai");
+  // Same as requesters: resolve Slack user from work email.
+  const byEmail = await lookupSlackIdByEmail("agrim@spyne.ai");
+  if (byEmail) return byEmail;
+  return DESIGNER_SLACK.agrim || "";
 }
 // Marketing Central Postgres ingest (same DB as Programs / rest of MC)
 const MC_INGEST_URL = (
