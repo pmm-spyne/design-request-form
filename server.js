@@ -765,7 +765,14 @@ app.post("/api/slack/commands", async (req, res) => {
       });
     }
 
-    if (command === "/design" || command === "/designrequest" || !command) {
+    const isDesignCmd =
+      !command ||
+      command === "/design" ||
+      command === "/designrequest" ||
+      command === "/internal_design_request" ||
+      /design/i.test(command);
+
+    if (isDesignCmd) {
       if (!SLACK_BOT_TOKEN) {
         return res.status(200).json({
           response_type: "ephemeral",
