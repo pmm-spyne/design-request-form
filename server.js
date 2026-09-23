@@ -45,6 +45,11 @@ const DESIGNER_SLACK = {
   mrigender: "U0A616H54CC",
   agrim: (process.env.SLACK_MANAGER_ID || "").trim() || "",
 };
+
+async function managerSlackId() {
+  if (DESIGNER_SLACK.agrim) return DESIGNER_SLACK.agrim;
+  return lookupSlackIdByEmail("agrim@spyne.ai");
+}
 // Marketing Central Postgres ingest (same DB as Programs / rest of MC)
 const MC_INGEST_URL = (
   process.env.MC_DESIGN_INGEST_URL ||
@@ -392,9 +397,14 @@ async function notifyLifecycle(kind, request) {
   const dms = [];
   const requesterId = await resolveRequesterSlackId(request || {});
   const designerIds = designerSlackIds(request || {});
+  const managerId = await managerSlackId();
 
   // Who gets a personal DM for each lifecycle event
   const dmTargets = new Set();
+  // Manager (Agrim) gets every key update so the board stays in sync for him.
+  if (managerId && ["assigned", "ready", "changes", "approved", "started", "in_progress", "updated", "complete", "done", "new", "submitted"].includes(kind)) {
+    dmTargets.add(managerId);
+  }
   if (kind === "assigned") {
     if (requesterId) dmTargets.add(requesterId);
     designerIds.forEach((id) => dmTargets.add(id));
@@ -405,11 +415,12 @@ async function notifyLifecycle(kind, request) {
   } else if (kind === "approved" || kind === "started" || kind === "in_progress") {
     if (requesterId) dmTargets.add(requesterId);
   } else if (kind === "updated") {
-    if (DESIGNER_SLACK.agrim) dmTargets.add(DESIGNER_SLACK.agrim);
     designerIds.forEach((id) => dmTargets.add(id));
   } else if (kind === "complete" || kind === "done") {
     if (requesterId) dmTargets.add(requesterId);
     designerIds.forEach((id) => dmTargets.add(id));
+  } else if (kind === "new" || kind === "submitted") {
+    if (requesterId) dmTargets.add(requesterId);
   }
 
   for (const uid of dmTargets) {
@@ -726,6 +737,27 @@ async function createDesignRequest(body) {
                 `*Request received* · \`${record.id}\`\n` +
                 `*${record.projectName}*\n` +
                 `Track it in Marketing Central → Design, or <${FORM_URL}/?view=mine|My requests>.`,
+            },
+          },
+        ]
+      );
+    }
+    const mgrId = await managerSlackId();
+    if (mgrId) {
+      await dmSlackUser(
+        mgrId,
+        `New design request ${record.id}: ${record.projectName}`,
+        [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text:
+                `*New request* · \`${record.id}\`\n` +
+                `*${record.projectName}*\n` +
+                `From: ${record.requesterName} (${record.requesterEmail || "—"})\n` +
+                `Team: ${record.team || "—"}\n` +
+                `<${MC_BOARD_URL}|Open Design board> to assign.`,
             },
           },
         ]
