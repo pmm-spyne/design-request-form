@@ -46,11 +46,18 @@ const DESIGNER_SLACK = {
   agrim: (process.env.SLACK_MANAGER_ID || "").trim() || "",
 };
 
+let _managerSlackIdCached = "";
+let _managerSlackIdAt = 0;
 async function managerSlackId() {
-  // Same as requesters: resolve Slack user from work email.
+  // Same as requesters: resolve Slack user from work email. Memoize ~10 min.
+  const now = Date.now();
+  if (_managerSlackIdCached && now - _managerSlackIdAt < 10 * 60 * 1000) {
+    return _managerSlackIdCached;
+  }
   const byEmail = await lookupSlackIdByEmail("agrim@spyne.ai");
-  if (byEmail) return byEmail;
-  return DESIGNER_SLACK.agrim || "";
+  _managerSlackIdCached = byEmail || DESIGNER_SLACK.agrim || "";
+  _managerSlackIdAt = now;
+  return _managerSlackIdCached;
 }
 // Marketing Central Postgres ingest (same DB as Programs / rest of MC)
 const MC_INGEST_URL = (
@@ -62,7 +69,14 @@ const MC_INGEST_SECRET = (process.env.MC_DESIGN_INGEST_SECRET || "").trim();
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, "public")));
+// Long-cache hashed-ish assets; form HTML itself is small. Redeploy busts via new files.
+app.use(
+  express.static(path.join(__dirname, "public"), {
+    // Railway always has a public domain; local stays uncached for iteration.
+    maxAge: process.env.RAILWAY_PUBLIC_DOMAIN ? "7d" : 0,
+    etag: true,
+  })
+);
 
 async function slackApi(method, body) {
   if (!SLACK_BOT_TOKEN) return { ok: false, error: "no_bot_token" };
