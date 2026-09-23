@@ -442,21 +442,39 @@ function option(text, value) {
   };
 }
 
+/** Marketing requesters for Slack /design modal (name + email dropdowns). */
+const MARKETING_REQUESTERS = [
+  { name: "Komal", email: "komal.gusain@spyne.ai" },
+  { name: "Aastha", email: "astha.bhardwaj@spyne.ai" },
+  { name: "Aman", email: "aman.bhardwaj@spyne.ai" },
+  { name: "Apoorv", email: "apoorv.bhatnagar1@spyne.ai" },
+  { name: "Amandeep", email: "amandeep.singh@spyne.ai" },
+  { name: "Riya", email: "riya.narang@spyne.ai" },
+  { name: "Anurag", email: "anurag.kumar@spyne.ai" },
+  { name: "Vrinda", email: "vrinda.sharma@spyne.ai" },
+  { name: "Agrim", email: "agrim@spyne.ai" },
+];
+
 function buildDesignRequestModal(profile = {}) {
-  const name = String(profile.name || "").trim();
-  const email = String(profile.email || "").trim();
-  const nameEl = {
-    type: "plain_text_input",
+  const profileEmail = String(profile.email || "").trim().toLowerCase();
+  const matched = MARKETING_REQUESTERS.find((p) => p.email === profileEmail);
+
+  const nameSelect = {
+    type: "static_select",
     action_id: "value",
-    placeholder: { type: "plain_text", text: "Your name" },
+    placeholder: { type: "plain_text", text: "Pick your name" },
+    options: MARKETING_REQUESTERS.map((p) => option(p.name, p.name)),
   };
-  if (name) nameEl.initial_value = name.slice(0, 150);
-  const emailEl = {
-    type: "plain_text_input",
+  const emailSelect = {
+    type: "static_select",
     action_id: "value",
-    placeholder: { type: "plain_text", text: "you@company.com" },
+    placeholder: { type: "plain_text", text: "Pick your email" },
+    options: MARKETING_REQUESTERS.map((p) => option(p.email, p.email)),
   };
-  if (email) emailEl.initial_value = email.slice(0, 150);
+  if (matched) {
+    nameSelect.initial_option = option(matched.name, matched.name);
+    emailSelect.initial_option = option(matched.email, matched.email);
+  }
 
   return {
     type: "modal",
@@ -466,28 +484,16 @@ function buildDesignRequestModal(profile = {}) {
     close: { type: "plain_text", text: "Cancel" },
     blocks: [
       {
-        type: "context",
-        elements: [
-          {
-            type: "mrkdwn",
-            text:
-              name || email
-                ? "Name & email pulled from your Slack profile — edit if needed."
-                : "Enter your name & work email so we can notify you on updates.",
-          },
-        ],
-      },
-      {
         type: "input",
         block_id: "requester_name",
         label: { type: "plain_text", text: "Your name" },
-        element: nameEl,
+        element: nameSelect,
       },
       {
         type: "input",
         block_id: "requester_email",
         label: { type: "plain_text", text: "Your email" },
-        element: emailEl,
+        element: emailSelect,
       },
       {
         type: "input",
@@ -833,16 +839,16 @@ app.post("/api/slack/interactions", async (req, res) => {
         referenceLinks: modalVal(values, "reference_links"),
         urgent: String(modalVal(values, "urgent") || "").includes("urgent"),
       };
-      if (!body.requesterEmail || !body.requesterEmail.includes("@")) {
-        return res.status(200).json({
-          response_action: "errors",
-          errors: { requester_email: "Enter a valid work email so we can notify you." },
-        });
-      }
       if (!String(body.requesterName || "").trim()) {
         return res.status(200).json({
           response_action: "errors",
-          errors: { requester_name: "Enter your name." },
+          errors: { requester_name: "Pick your name from the list." },
+        });
+      }
+      if (!body.requesterEmail || !body.requesterEmail.includes("@")) {
+        return res.status(200).json({
+          response_action: "errors",
+          errors: { requester_email: "Pick your email from the list." },
         });
       }
       const errors = validateBody(body);
