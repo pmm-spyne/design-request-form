@@ -471,7 +471,6 @@ function option(text, value) {
 
 /** Marketing requesters for Slack /design modal (name + email dropdowns). */
 const MARKETING_REQUESTERS = [
-  { name: "Komal", email: "komal.gusain@spyne.ai" },
   { name: "Aastha", email: "astha.bhardwaj@spyne.ai" },
   { name: "Aman", email: "aman.bhardwaj@spyne.ai" },
   { name: "Apoorv", email: "apoorv.bhatnagar1@spyne.ai" },
@@ -479,6 +478,7 @@ const MARKETING_REQUESTERS = [
   { name: "Riya", email: "riya.narang@spyne.ai" },
   { name: "Anurag", email: "anurag.kumar@spyne.ai" },
   { name: "Vrinda", email: "vrinda.sharma@spyne.ai" },
+  { name: "Pushti", email: "pushti.maheshwari@spyne.ai" },
   { name: "Agrim", email: "agrim@spyne.ai" },
 ];
 

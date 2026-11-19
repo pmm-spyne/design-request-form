@@ -167,7 +167,7 @@
     if (!peopleList.length) {
       html +=
         '<label class="f">Name <span class="req">*</span>' +
-        '<input name="requesterNameFallback" autocomplete="name" placeholder="e.g. Komal"></label>';
+        '<input name="requesterNameFallback" autocomplete="name" placeholder="e.g. Vrinda"></label>';
       html +=
         '<label class="f">Email <span class="req">*</span>' +
         '<input name="requesterEmailFallback" type="email" autocomplete="email" placeholder="you@spyne.ai"></label>';
